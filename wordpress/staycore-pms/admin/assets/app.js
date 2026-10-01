@@ -1,203 +1,54 @@
 (() => {
-const api = async (path, options={}) => {
-  const res = await fetch(StayCorePMS.root + path, {
-    ...options,
-    headers: {'Content-Type':'application/json','X-WP-Nonce':StayCorePMS.nonce,...(options.headers||{})}
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message || 'Request failed');
-  return data;
-};
-const el = s => document.querySelector(s);
-const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const dateOnly = v => String(v || '').slice(0,10);
-const prettyDate = v => {
-  if(!v) return '';
-  const d = new Date(String(v).replace(' ','T'));
-  return isNaN(d) ? String(v).slice(0,16) : d.toLocaleString('en-IN',{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});
-};
-const digits = v => String(v || '').replace(/\D/g,'');
-const state = {tab:'rooms', units:[], roomFilter:'all', roomSearch:''};
+const api=async(path,options={})=>{const res=await fetch(StayCorePMS.root+path,{...options,headers:{'Content-Type':'application/json','X-WP-Nonce':StayCorePMS.nonce,...(options.headers||{})}});const data=await res.json();if(!res.ok)throw new Error(data.message||'Request failed');return data};
+const el=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const day=v=>String(v||'').slice(0,10), money=v=>'₹'+Number(v||0).toLocaleString('en-IN',{maximumFractionDigits:2}), digits=v=>String(v||'').replace(/\D/g,'');
+const pretty=v=>{if(!v)return'';const d=new Date(String(v).replace(' ','T'));return isNaN(d)?String(v).slice(0,16):d.toLocaleString('en-IN',{day:'numeric',month:'short',year:'2-digit',hour:'numeric',minute:'2-digit'})};
+const addDays=(s,n)=>{const d=new Date(s+'T12:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
+const state={tab:'rooms',units:[],date:StayCorePMS.today,filter:'all',search:''};
 
-const statusAction = async (id,status) => {
-  await api('reservations/'+id+'/status',{method:'POST',body:JSON.stringify({status})});
-  await kpis();
-  await render();
-};
+const assignedNames=r=>(r.assignments||[]).map(a=>a.name).join(', ');
+const payBadge=r=>{const p=r.payment||{};return '<span class="sc-pay '+esc(p.status||'not_set')+'">'+esc((p.status||'not set').replace('_',' '))+(Number(p.balance)>0?' · '+money(p.balance):'')+'</span>'};
+const quickActions=r=>{let x='';if(StayCorePMS.caps.reservations&&r.status==='confirmed')x+='<button class="button sc-status" data-id="'+r.id+'" data-status="checked_in">Check in</button>';if(StayCorePMS.caps.reservations&&r.status==='checked_in')x+='<button class="button button-primary sc-status" data-id="'+r.id+'" data-status="checked_out">Check out</button>';if(r.phone){x+='<a class="button" href="tel:'+esc(r.phone)+'">Call</a>';const p=digits(r.phone);if(p)x+='<a class="button" target="_blank" rel="noopener" href="https://wa.me/'+p+'">WhatsApp</a>';}x+='<button class="button sc-open" data-id="'+r.id+'">Open</button>';return x};
 
-const kpis = async () => {
-  const d = await api('dashboard');
-  el('#sc-kpis').innerHTML = [
-    ['Arrivals',d.arrivals],['Departures',d.departures],['In house',d.inhouse],['Units',d.available],['Open tasks',d.open_tasks]
-  ].map(([l,v])=>'<article class="sc-kpi"><strong>'+v+'</strong><span>'+l+'</span></article>').join('');
-};
+const statusAction=async(id,status)=>{await api('reservations/'+id+'/status',{method:'POST',body:JSON.stringify({status})});await refresh()};
+const bindCommon=()=>{document.querySelectorAll('.sc-status').forEach(b=>b.onclick=()=>statusAction(b.dataset.id,b.dataset.status).catch(e=>alert(e.message)));document.querySelectorAll('.sc-open').forEach(b=>b.onclick=()=>openReservation(b.dataset.id).catch(e=>alert(e.message)))};
 
-const quickActions = r => {
-  let out = '';
-  if(r.status==='confirmed') out += '<button class="button sc-status" data-id="'+r.id+'" data-status="checked_in">Check in</button>';
-  if(r.status==='checked_in') out += '<button class="button button-primary sc-status" data-id="'+r.id+'" data-status="checked_out">Check out</button>';
-  if(r.phone) {
-    const tel=digits(r.phone);
-    out += '<a class="button" href="tel:'+esc(r.phone)+'">Call</a>';
-    if(tel) out += '<a class="button" target="_blank" rel="noopener" href="https://wa.me/'+tel+'">WhatsApp</a>';
-  }
-  return out;
-};
+const kpis=async()=>{const d=await api('dashboard');el('#sc-kpis').innerHTML=[['Arrivals',d.arrivals],['Departures',d.departures],['In house',d.inhouse],['Free units',d.available_units],['Collected',money(d.collected)],['Balance',money(d.balance)]].map(([l,v])=>'<article class="sc-kpi"><strong>'+v+'</strong><span>'+l+'</span></article>').join('');el('#sc-alerts').innerHTML=d.alerts?.length?'<div class="sc-alert-strip">'+d.alerts.slice(0,8).map(a=>'<button class="sc-alert sc-open" data-id="'+a.reservation_id+'">'+esc(a.message)+'</button>').join('')+'</div>':'';bindCommon()};
 
-const guestLine = r => {
-  const guests = Number(r.adults||0)+Number(r.children||0);
-  return '<div class="sc-guest">'+
-    '<div class="sc-row"><div><div class="sc-title">'+esc((r.guest_name||'Guest').trim())+'</div><div class="sc-meta">'+esc(r.phone||'No phone')+(r.email?' · '+esc(r.email):'')+'</div></div><span class="sc-badge '+esc(r.status)+'">'+esc(String(r.status||'').replace('_',' '))+'</span></div>'+
-    '<div class="sc-meta sc-stay-meta">'+esc(r.source||'direct')+' · '+prettyDate(r.check_in)+' → '+prettyDate(r.check_out)+' · '+guests+' guest'+(guests===1?'':'s')+'</div>'+
-    '<div class="sc-actions">'+quickActions(r)+'</div>'+
-  '</div>';
-};
+const roomNumber=u=>{const m=String(u.name||u.room_group||'').match(/Room\s+(\d+)/i);return m?Number(m[1]):9999};
+const roomKey=u=>u.type==='room'?u.name:'Room '+roomNumber(u);
+const roomType=units=>{const f=units[0]||{};if(f.type==='room')return f.room_group||'Private Room';const m=String(f.room_group||'').split('—');return(m[1]||f.room_group||'Dorm').trim()};
+const groupRooms=units=>{const map={};units.forEach(u=>{const k=roomKey(u);if(!map[k])map[k]={key:k,number:roomNumber(u),units:[]};map[k].units.push(u)});return Object.values(map).sort((a,b)=>a.number-b.number).map(g=>{g.units.sort((a,b)=>String(a.name).localeCompare(String(b.name),undefined,{numeric:true}));g.type=roomType(g.units);g.private=g.units.length===1&&g.units[0].type==='room';g.capacity=g.private?Number(g.units[0].capacity||1):g.units.length;return g})};
+const activeOn=(r,d)=>day(r.check_in)<=d&&day(r.check_out)>=d&&!['cancelled','no_show','checked_out'].includes(r.status)&&!(day(r.check_out)===d&&String(r.check_out).slice(11,16)<='11:00');
+const resForUnit=(rows,uid,d)=>rows.find(r=>activeOn(r,d)&&(r.assignments||[]).some(a=>Number(a.unit_id)===Number(uid)));
 
-const reservationCard = r => '<article class="sc-card">'+
-  '<div class="sc-row"><div><div class="sc-title">'+esc((r.guest_name||'Guest').trim())+'</div><div class="sc-meta">'+esc(r.unit_name||'Unassigned')+' · '+prettyDate(r.check_in)+' → '+prettyDate(r.check_out)+'</div></div><span class="sc-badge">'+esc(String(r.status||'').replace('_',' '))+'</span></div>'+
-  '<div class="sc-meta">'+esc(r.phone||'')+(r.source?' · '+esc(r.source):'')+'</div>'+
-  '<div class="sc-actions">'+quickActions(r)+'</div></article>';
+const guestMini=r=>{const count=Number(r.adults||0)+Number(r.children||0);return '<div class="sc-guest-mini"><div class="sc-row"><button class="sc-link sc-open" data-id="'+r.id+'">'+esc((r.guest_name||'Guest').trim())+'</button><span class="sc-badge '+esc(r.status)+'">'+esc(String(r.status).replace('_',' '))+'</span></div><div class="sc-meta">'+esc(r.phone||r.email||'No contact')+' · '+esc(r.source||'direct')+' · '+count+' guest'+(count===1?'':'s')+'</div><div class="sc-meta">'+pretty(r.check_in)+' → '+pretty(r.check_out)+'</div><div class="sc-row sc-pay-row">'+payBadge(r)+'<span class="sc-meta">'+(r.assignments?.length>1?r.assignments.length+' units':'')+'</span></div><div class="sc-actions compact">'+quickActions(r)+'</div></div>'};
 
-const roomNumber = u => {
-  const m = String(u.name||u.room_group||'').match(/Room\s+(\d+)/i);
-  return m ? Number(m[1]) : 9999;
-};
-const roomKey = u => u.type === 'room' ? u.name : ('Room '+roomNumber(u));
-const roomType = units => {
-  const first=units[0]||{};
-  if(first.type==='room') return first.room_group || 'Private Room';
-  const m=String(first.room_group||'').split('—');
-  return (m[1]||first.room_group||'Dorm').trim();
-};
-const currentReservation = (unitId, rows) => rows.find(r => Number(r.unit_id)===Number(unitId) && ['confirmed','checked_in'].includes(r.status));
-const groupRooms = (units, rows) => {
-  const map={};
-  units.forEach(u=>{
-    const key=roomKey(u);
-    if(!map[key]) map[key]={key,number:roomNumber(u),units:[]};
-    map[key].units.push(u);
-  });
-  return Object.values(map).sort((a,b)=>a.number-b.number).map(g=>{
-    g.units.sort((a,b)=>String(a.name).localeCompare(String(b.name),undefined,{numeric:true}));
-    g.reservations=g.units.map(u=>currentReservation(u.id,rows)).filter(Boolean);
-    g.type=roomType(g.units);
-    g.isPrivate=g.units.length===1 && g.units[0].type==='room';
-    g.totalCapacity=g.isPrivate ? Number(g.units[0].capacity||1) : g.units.length;
-    g.occupied=g.isPrivate ? (g.reservations[0] ? Number(g.reservations[0].adults||0)+Number(g.reservations[0].children||0) : 0) : g.reservations.length;
-    return g;
-  });
-};
+const renderRooms=async()=>{state.units=await api('units');const rows=await api('reservations?from='+state.date+'&to='+state.date);const rooms=groupRooms(state.units);const cards=[];rooms.forEach(g=>{const reservations=[];let occupied=0;g.units.forEach(u=>{const r=resForUnit(rows,u.id,state.date);if(r&&!reservations.some(x=>x.id===r.id))reservations.push(r);if(r)occupied+=g.private?Math.max(1,Number(r.adults||0)+Number(r.children||0)):1});const free=Math.max(0,g.capacity-occupied);const hay=(g.key+' '+g.type+' '+reservations.map(r=>(r.guest_name||'')+' '+(r.phone||'')+' '+assignedNames(r)).join(' ')).toLowerCase();let include=state.filter==='all'||(state.filter==='available'&&free>0)||(state.filter==='inhouse'&&reservations.some(r=>r.status==='checked_in'))||(state.filter==='arrivals'&&reservations.some(r=>day(r.check_in)===state.date&&r.status==='confirmed'))||(state.filter==='departures'&&reservations.some(r=>day(r.check_out)===state.date));if(state.search&&!hay.includes(state.search.toLowerCase()))include=false;if(!include)return;let body='';if(g.private){body=reservations.length?reservations.map(guestMini).join(''):'<div class="sc-free-block">Available · max '+g.capacity+' guests</div>'}else{body='<details class="sc-beds" '+(occupied?'open':'')+'><summary>'+occupied+'/'+g.capacity+' occupied · '+free+' free</summary>'+g.units.map(u=>{const r=resForUnit(rows,u.id,state.date);const bed=String(u.name).split('·').pop().trim();return '<div class="sc-unit-row '+(r?'occupied':'sc-free')+'"><div class="sc-bed-label">'+esc(bed)+'</div><div class="sc-unit-main">'+(r?guestMini(r):'<strong>Available</strong><div class="sc-meta">1 guest max</div>')+'</div></div>'}).join('')+'</details>'}
+const hk=g.units.every(u=>u.housekeeping_status===g.units[0].housekeeping_status)?g.units[0].housekeeping_status:'mixed';cards.push('<article class="sc-room-card"><header class="sc-room-head"><div><div class="sc-room-no">'+esc(g.key)+'</div><div class="sc-meta">'+esc(g.type)+'</div></div><div class="sc-head-actions"><div class="sc-occupancy"><strong>'+occupied+' / '+g.capacity+'</strong><span>'+free+' free</span></div>'+(StayCorePMS.caps.housekeeping?'<select class="sc-hk" data-units="'+g.units.map(u=>u.id).join(',')+'"><option value="clean" '+(hk==='clean'?'selected':'')+'>Clean</option><option value="dirty" '+(hk==='dirty'?'selected':'')+'>Dirty</option><option value="cleaning" '+(hk==='cleaning'?'selected':'')+'>Cleaning</option><option value="maintenance" '+(hk==='maintenance'?'selected':'')+'>Maintenance</option></select>':'')+'</div></header>'+body+'</article>')});
+const filters=[['all','All'],['arrivals','Arrivals'],['inhouse','In-house'],['departures','Departures'],['available','Available']];el('#sc-view').innerHTML='<section class="sc-room-tools"><div class="sc-date-nav"><button class="button" id="sc-prev">‹</button><input id="sc-date" type="date" value="'+state.date+'"><button class="button" id="sc-next">›</button><button class="button" id="sc-today-date">Today</button></div><input id="sc-room-search" type="search" placeholder="Search guest, phone, room or bed" value="'+esc(state.search)+'"><div class="sc-filter-row">'+filters.map(([v,l])=>'<button class="'+(state.filter===v?'active':'')+'" data-filter="'+v+'">'+l+'</button>').join('')+'</div></section><section class="sc-room-list">'+(cards.length?cards.join(''):'<div class="sc-card sc-empty">No rooms match this view.</div>')+'</section>';
+el('#sc-prev').onclick=()=>{state.date=addDays(state.date,-1);renderRooms()};el('#sc-next').onclick=()=>{state.date=addDays(state.date,1);renderRooms()};el('#sc-today-date').onclick=()=>{state.date=StayCorePMS.today;renderRooms()};el('#sc-date').onchange=e=>{state.date=e.target.value;renderRooms()};el('#sc-room-search').onchange=e=>{state.search=e.target.value;renderRooms()};document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{state.filter=b.dataset.filter;renderRooms()});document.querySelectorAll('.sc-hk').forEach(s=>s.onchange=async()=>{try{await api('housekeeping',{method:'POST',body:JSON.stringify({unit_ids:s.dataset.units.split(',').map(Number),status:s.value})});await renderRooms()}catch(e){alert(e.message)}});bindCommon()};
 
-const filterRoom = (g, today) => {
-  const rows=g.reservations;
-  if(state.roomFilter==='available') return g.occupied < g.totalCapacity;
-  if(state.roomFilter==='arrivals') return rows.some(r=>dateOnly(r.check_in)===today && r.status==='confirmed');
-  if(state.roomFilter==='inhouse') return rows.some(r=>r.status==='checked_in');
-  if(state.roomFilter==='departures') return rows.some(r=>dateOnly(r.check_out)===today && ['confirmed','checked_in'].includes(r.status));
-  return true;
-};
+const reservationCard=r=>'<article class="sc-card"><div class="sc-row"><div><button class="sc-link sc-open" data-id="'+r.id+'">'+esc((r.guest_name||'Guest').trim())+'</button><div class="sc-meta">'+esc(assignedNames(r)||'Unassigned')+'</div></div><span class="sc-badge '+esc(r.status)+'">'+esc(String(r.status).replace('_',' '))+'</span></div><div class="sc-meta">'+pretty(r.check_in)+' → '+pretty(r.check_out)+' · '+esc(r.source||'direct')+'</div><div class="sc-row sc-pay-row">'+payBadge(r)+'<strong>'+money(r.total)+'</strong></div><div class="sc-actions">'+quickActions(r)+'</div></article>';
+const renderToday=async()=>{const rows=await api('reservations?from='+StayCorePMS.today+'&to='+StayCorePMS.today);el('#sc-view').innerHTML='<section class="sc-list">'+(rows.length?rows.map(reservationCard).join(''):'<div class="sc-card sc-empty">No stays touching today.</div>')+'</section>';bindCommon()};
+const renderStays=async()=>{const rows=await api('reservations?from='+StayCorePMS.today+'&to='+addDays(StayCorePMS.today,90));el('#sc-view').innerHTML='<div class="sc-toolbar"><button class="button" id="sc-export">Export CSV</button></div><section class="sc-list">'+(rows.length?rows.map(reservationCard).join(''):'<div class="sc-card sc-empty">No upcoming stays.</div>')+'</section>';el('#sc-export').onclick=()=>exportCsv(rows);bindCommon()};
+const exportCsv=rows=>{const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const lines=[['Booking','Guest','Phone','Units','Check in','Check out','Status','Source','Total','Collected','Balance'].join(',')];rows.forEach(r=>lines.push([r.external_ref||r.id,r.guest_name,r.phone,assignedNames(r),r.check_in,r.check_out,r.status,r.source,r.total,r.payment?.captured,r.payment?.balance].map(q).join(',')));const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));a.download='staycore-stays.csv';a.click();URL.revokeObjectURL(a.href)};
 
-const roomCard = g => {
-  const free=Math.max(0,g.totalCapacity-g.occupied);
-  let body='';
-  if(g.isPrivate){
-    const r=g.reservations[0];
-    body = r ? guestLine(r) : '<div class="sc-unit-row sc-free"><span>Private room</span><strong>Available · max '+g.totalCapacity+'</strong></div>';
-  } else {
-    const unitRows=g.units.map(u=>{
-      const r=currentReservation(u.id,g.reservations);
-      const bed=String(u.name).split('·').pop().trim();
-      return '<div class="sc-unit-row '+(r?'occupied':'sc-free')+'"><div class="sc-bed-label">'+esc(bed)+'</div><div class="sc-unit-main">'+(r?guestLine(r):'<div><strong>Available</strong><div class="sc-meta">1 guest max</div></div>')+'</div></div>';
-    }).join('');
-    body = '<details class="sc-beds" '+(g.occupied? 'open':'')+'><summary>Show '+g.units.length+' beds</summary>'+unitRows+'</details>';
-  }
+const renderAvailability=async()=>{state.units=await api('units');const from=state.date,to=addDays(from,6),rows=await api('reservations?from='+from+'&to='+to),rooms=groupRooms(state.units),dates=Array.from({length:7},(_,i)=>addDays(from,i));el('#sc-view').innerHTML='<section class="sc-room-tools"><div class="sc-date-nav"><button class="button" id="av-prev">‹ 7d</button><input id="av-date" type="date" value="'+from+'"><button class="button" id="av-next">7d ›</button></div></section><div class="sc-calendar"><div class="sc-cal-head"><span>Room</span>'+dates.map(d=>'<span>'+new Date(d+'T12:00:00').toLocaleDateString('en-IN',{weekday:'short',day:'numeric'})+'</span>').join('')+'</div>'+rooms.map(g=>'<div class="sc-cal-row"><strong>'+esc(g.key)+'</strong>'+dates.map(d=>{let occ=0;g.units.forEach(u=>{if(resForUnit(rows,u.id,d))occ++});return '<span class="'+(occ?'busy':'free')+'">'+(g.private?(occ?'Booked':'Free'):occ+'/'+g.units.length)+'</span>'}).join('')+'</div>').join('')+'</div>';el('#av-prev').onclick=()=>{state.date=addDays(state.date,-7);renderAvailability()};el('#av-next').onclick=()=>{state.date=addDays(state.date,7);renderAvailability()};el('#av-date').onchange=e=>{state.date=e.target.value;renderAvailability()}};
 
-  const searchHay=(g.key+' '+g.type+' '+g.reservations.map(r=>(r.guest_name||'')+' '+(r.phone||'')).join(' ')).toLowerCase();
-  return '<article class="sc-room-card" data-search="'+esc(searchHay)+'">'+
-    '<header class="sc-room-head"><div><div class="sc-room-no">'+esc(g.key)+'</div><div class="sc-meta">'+esc(g.type)+'</div></div><div class="sc-occupancy"><strong>'+g.occupied+' / '+g.totalCapacity+'</strong><span>'+free+' free</span></div></header>'+
-    body+
-  '</article>';
-};
+const renderActivity=async()=>{const rows=await api('activity?limit=80');el('#sc-view').innerHTML='<section class="sc-list">'+(rows.length?rows.map(a=>'<article class="sc-card"><div class="sc-row"><strong>'+esc(a.message)+'</strong><span class="sc-meta">'+pretty(a.created_at)+'</span></div><div class="sc-meta">'+esc(a.user_name||'System')+' · '+esc(a.action)+'</div></article>').join(''):'<div class="sc-card sc-empty">No activity yet.</div>')+'</section>'};
+const renderInventory=async()=>{state.units=await api('units');el('#sc-view').innerHTML='<div class="sc-toolbar">'+(StayCorePMS.caps.reservations?'<button class="button button-primary" id="sc-add-unit">+ Room / Bed</button>':'')+'</div><section class="sc-list grid">'+state.units.map(u=>'<article class="sc-card"><div class="sc-row"><div><strong>'+esc(u.name)+'</strong><div class="sc-meta">'+esc(u.room_group||u.type)+' · capacity '+u.capacity+'</div></div><span class="sc-badge">'+esc(u.housekeeping_status||'clean')+'</span></div><div class="sc-meta">'+money(u.base_rate)+' base rate</div></article>').join('')+'</section>';if(el('#sc-add-unit'))el('#sc-add-unit').onclick=openUnit};
+const renderIntegrations=async()=>{const rows=await api('integrations');const cards=Object.values(rows).map(v=>'<article class="sc-card"><div class="sc-row"><div><strong>'+esc(v.label)+'</strong><div class="sc-meta">'+esc((v.capabilities||[]).join(' · '))+'</div></div><span class="sc-badge">'+esc(v.status)+'</span></div></article>');cards.push('<article class="sc-card"><strong>Open adapter layer</strong><div class="sc-meta">WooCommerce, OTA, WhatsApp, accounting, locks and future integrations subscribe to StayCore events without owning PMS inventory.</div></article>');el('#sc-view').innerHTML='<section class="sc-list grid">'+cards.join('')+'</section>'};
 
-const renderRooms = async () => {
-  const today=StayCorePMS.today;
-  const [units,rows]=await Promise.all([api('units'),api('reservations?from='+today+'&to='+today)]);
-  state.units=units;
-  const groups=groupRooms(units,rows).filter(g=>filterRoom(g,today));
-  const q=state.roomSearch.trim().toLowerCase();
-  const visible=q?groups.filter(g=>(g.key+' '+g.type+' '+g.reservations.map(r=>(r.guest_name||'')+' '+(r.phone||'')).join(' ')).toLowerCase().includes(q)):groups;
+const unitPicker=(selected=[])=>{const groups=groupRooms(state.units);return '<div class="sc-unit-picker">'+groups.map(g=>'<fieldset><legend>'+esc(g.key)+' · '+esc(g.type)+'</legend>'+g.units.map(u=>'<label><input type="checkbox" name="unit_ids" value="'+u.id+'" '+(selected.includes(Number(u.id))?'checked':'')+'> <span>'+esc(u.name)+(u.type==='room'?' · max '+u.capacity:'')+'</span></label>').join('')+'</fieldset>').join('')+'</div>'};
 
-  const filters=[['all','All'],['arrivals','Arrivals'],['inhouse','In-house'],['departures','Departures'],['available','Available']];
-  el('#sc-view').innerHTML =
-    '<section class="sc-room-tools"><input id="sc-room-search" type="search" placeholder="Search guest, phone, room or bed" value="'+esc(state.roomSearch)+'"><div class="sc-filter-row">'+filters.map(([v,l])=>'<button class="'+(state.roomFilter===v?'active':'')+'" data-filter="'+v+'">'+l+'</button>').join('')+'</div></section>'+
-    '<section class="sc-room-list">'+(visible.length?visible.map(roomCard).join(''):'<div class="sc-card sc-empty">No rooms match this view.</div>')+'</section>';
+const openBooking=async()=>{state.units=await api('units');const d=el('#sc-dialog');d.innerHTML='<form class="sc-form" id="sc-book-form"><div class="sc-dialog-head"><h2>New booking</h2><button type="button" class="button sc-close">×</button></div><div class="two"><label>First name<input name="first_name" required></label><label>Last name<input name="last_name"></label></div><div class="two"><label>Phone<input name="phone" inputmode="tel"></label><label>Email<input name="email" type="email"></label></div><label>Assign room(s) / bed(s)</label>'+unitPicker()+'<div class="two"><label>Adults<input name="adults" type="number" min="1" value="1"></label><label>Children<input name="children" type="number" min="0" value="0"></label></div><div class="two"><label>Check in<input name="check_in" type="datetime-local" required></label><label>Check out<input name="check_out" type="datetime-local" required></label></div><div class="two"><label>Total ₹<input name="total" type="number" step="0.01"></label><label>Source<select name="source"><option>direct</option><option>walkin</option><option>goibibo</option><option>makemytrip</option><option>booking</option><option>airbnb</option><option>agoda</option><option>other</option></select></label></div><label>Booking / OTA reference<input name="external_ref"></label><label>Notes<textarea name="notes"></textarea></label><div class="sc-actions"><button class="button button-primary">Create booking</button><button type="button" class="button sc-close">Cancel</button></div></form>';d.showModal();d.querySelectorAll('.sc-close').forEach(b=>b.onclick=()=>d.close());d.querySelector('form').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.target),p=Object.fromEntries(fd.entries());p.unit_ids=fd.getAll('unit_ids').map(Number);try{await api('reservations',{method:'POST',body:JSON.stringify(p)});d.close();await refresh()}catch(x){alert(x.message)}}};
 
-  const search=el('#sc-room-search');
-  search.oninput=e=>{state.roomSearch=e.target.value; document.querySelectorAll('.sc-room-card').forEach(card=>{card.style.display=card.dataset.search.includes(state.roomSearch.toLowerCase())?'':'none';});};
-  document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=async()=>{state.roomFilter=b.dataset.filter;await renderRooms();bindStatus();});
-};
+const openReservation=async id=>{state.units=await api('units');const r=await api('reservations/'+id),d=el('#sc-dialog'),assigned=(r.assignments||[]).map(a=>Number(a.unit_id));const opts=state.units.map(u=>'<option value="'+u.id+'">'+esc(u.name)+'</option>').join('');d.innerHTML='<div class="sc-detail"><div class="sc-dialog-head"><div><div class="eyebrow">BOOKING '+esc(r.external_ref||'#'+r.id)+'</div><h2>'+esc((r.guest_name||'Guest').trim())+'</h2></div><button class="button sc-close">×</button></div><div class="sc-detail-summary"><span class="sc-badge '+esc(r.status)+'">'+esc(String(r.status).replace('_',' '))+'</span>'+payBadge(r)+'<strong>'+money(r.total)+'</strong></div><form id="sc-edit" class="sc-form inline"><div class="two"><label>First name<input name="first_name" value="'+esc(r.first_name)+'"></label><label>Last name<input name="last_name" value="'+esc(r.last_name)+'"></label></div><div class="two"><label>Phone<input name="phone" value="'+esc(r.phone)+'"></label><label>Email<input name="email" type="email" value="'+esc(r.email)+'"></label></div><div class="two"><label>Nationality<input name="nationality" value="'+esc(r.nationality)+'"></label><label>ID type<input name="id_type" value="'+esc(r.id_type)+'"></label></div><label>ID number<input name="id_number" value="'+esc(r.id_number)+'"></label><div class="two"><label>Check in<input name="check_in" type="datetime-local" value="'+esc(String(r.check_in).replace(' ','T').slice(0,16))+'"></label><label>Check out<input name="check_out" type="datetime-local" value="'+esc(String(r.check_out).replace(' ','T').slice(0,16))+'"></label></div><div class="two"><label>Adults<input name="adults" type="number" min="1" value="'+r.adults+'"></label><label>Children<input name="children" type="number" min="0" value="'+r.children+'"></label></div><div class="two"><label>Total ₹<input name="total" type="number" step="0.01" value="'+r.total+'"></label><label>Source<input name="source" value="'+esc(r.source)+'"></label></div><label>Booking reference<input name="external_ref" value="'+esc(r.external_ref)+'"></label><label>Notes<textarea name="notes">'+esc(r.notes)+'</textarea></label>'+(StayCorePMS.caps.reservations?'<button class="button button-primary">Save details</button>':'')+'</form><section class="sc-detail-section"><h3>Assigned units</h3>'+r.assignments.map(a=>'<div class="sc-move-row"><div><strong>'+esc(a.name)+'</strong><div class="sc-meta">'+esc(a.room_group||a.type)+'</div></div>'+(StayCorePMS.caps.reservations?'<div class="sc-move-controls"><select data-from="'+a.unit_id+'">'+opts+'</select><button class="button sc-move" data-from="'+a.unit_id+'">Move</button></div>':'')+'</div>').join('')+'</section><section class="sc-detail-section"><h3>Payments</h3><div class="sc-payment-summary">Collected <strong>'+money(r.payment.captured)+'</strong> · Balance <strong>'+money(r.payment.balance)+'</strong></div>'+((r.payments||[]).map(p=>'<div class="sc-payment-row"><span>'+esc(p.method)+' · '+esc(p.status)+'</span><strong>'+money(p.amount)+'</strong></div>').join('')||'<div class="sc-meta">No payments recorded.</div>')+(StayCorePMS.caps.payments?'<form id="sc-payment" class="sc-payment-form"><input name="amount" type="number" step="0.01" min="0.01" placeholder="Amount" required><select name="method"><option>cash</option><option>upi</option><option>card</option><option>ota</option><option>bank</option><option>other</option></select><input name="external_ref" placeholder="Reference"><button class="button button-primary">Record</button></form>':'')+'</section><section class="sc-detail-section"><h3>Activity</h3>'+((r.activity||[]).map(a=>'<div class="sc-activity-line"><span>'+esc(a.message)+'</span><small>'+pretty(a.created_at)+' · '+esc(a.user_name||'System')+'</small></div>').join('')||'<div class="sc-meta">No activity yet.</div>')+'</section></div>';d.showModal();d.querySelector('.sc-close').onclick=()=>d.close();if(el('#sc-edit'))el('#sc-edit').onsubmit=async e=>{e.preventDefault();try{await api('reservations/'+id,{method:'PUT',body:JSON.stringify(Object.fromEntries(new FormData(e.target).entries()))});d.close();await refresh()}catch(x){alert(x.message)}};d.querySelectorAll('.sc-move').forEach(b=>b.onclick=async()=>{const s=b.parentElement.querySelector('select'),to=Number(s.value);if(!to||to===Number(b.dataset.from))return;try{await api('reservations/'+id+'/move',{method:'POST',body:JSON.stringify({from_unit_id:Number(b.dataset.from),to_unit_id:to})});await openReservation(id);await kpis()}catch(x){alert(x.message)}});if(el('#sc-payment'))el('#sc-payment').onsubmit=async e=>{e.preventDefault();try{await api('reservations/'+id+'/payments',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target).entries()))});await openReservation(id);await kpis()}catch(x){alert(x.message)}}};
 
-const renderToday = async () => {
-  const day=StayCorePMS.today;
-  const rows=await api('reservations?from='+day+'&to='+day);
-  el('#sc-view').innerHTML='<section class="sc-list">'+(rows.length?rows.map(reservationCard).join(''):'<div class="sc-card sc-empty">No stays touching today yet.</div>')+'</section>';
-};
+const openUnit=()=>{const d=el('#sc-dialog');d.innerHTML='<form class="sc-form"><div class="sc-dialog-head"><h2>Add room / bed</h2><button type="button" class="button sc-close">×</button></div><label>Name<input name="name" required></label><label>Room group<input name="room_group"></label><div class="two"><label>Type<select name="type"><option value="bed">Bed</option><option value="room">Private room</option></select></label><label>Capacity<input name="capacity" type="number" min="1" value="1"></label></div><label>Base rate ₹<input name="base_rate" type="number" step="0.01"></label><button class="button button-primary">Add inventory</button></form>';d.showModal();d.querySelector('.sc-close').onclick=()=>d.close();d.querySelector('form').onsubmit=async e=>{e.preventDefault();try{await api('units',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target).entries()))});d.close();await refresh()}catch(x){alert(x.message)}}};
 
-const renderStays = async () => {
-  const day=StayCorePMS.today;
-  const rows=await api('reservations?from='+day);
-  el('#sc-view').innerHTML='<section class="sc-list">'+(rows.length?rows.map(reservationCard).join(''):'<div class="sc-card sc-empty">No upcoming stays.</div>')+'</section>';
-};
-
-const renderInventory = async () => {
-  state.units=await api('units');
-  el('#sc-view').innerHTML='<div class="sc-actions"><button class="button button-primary" id="sc-add-unit">+ Room / Bed</button></div><section class="sc-list grid">'+(state.units.length?state.units.map(u=>'<article class="sc-card"><div class="sc-row"><div><div class="sc-title">'+esc(u.name)+'</div><div class="sc-meta">'+esc(u.room_group||u.type)+' · capacity '+esc(u.capacity)+'</div></div><span class="sc-badge">'+esc(u.status)+'</span></div><div class="sc-meta">₹'+Number(u.base_rate||0).toLocaleString('en-IN')+' base rate</div></article>').join(''):'<div class="sc-card sc-empty">Add your rooms and dorm beds.</div>')+'</section>';
-  const b=el('#sc-add-unit');if(b)b.onclick=openUnit;
-};
-
-const renderIntegrations = async () => {
-  const rows=await api('integrations');
-  const cards=Object.entries(rows).map(([key,v])=>'<article class="sc-card"><div class="sc-row"><div><div class="sc-title">'+esc(v.label)+'</div><div class="sc-meta">'+esc((v.capabilities||[]).join(' · '))+'</div></div><span class="sc-badge">'+esc(v.status)+'</span></div></article>');
-  cards.push('<article class="sc-card"><div class="sc-title">Open Integration API</div><div class="sc-meta">Adapters can connect OTAs, payments, WhatsApp, accounting, locks and other WordPress plugins without modifying PMS core.</div></article>');
-  el('#sc-view').innerHTML='<section class="sc-list grid">'+cards.join('')+'</section>';
-};
-
-const bindStatus = () => document.querySelectorAll('.sc-status').forEach(b=>b.onclick=()=>statusAction(b.dataset.id,b.dataset.status).catch(e=>alert(e.message)));
-const render = async () => {
-  if(state.tab==='rooms') await renderRooms();
-  if(state.tab==='today') await renderToday();
-  if(state.tab==='stays') await renderStays();
-  if(state.tab==='inventory') await renderInventory();
-  if(state.tab==='integrations') await renderIntegrations();
-  bindStatus();
-};
-
-const openBooking = async () => {
-  state.units=await api('units');
-  const d=el('#sc-dialog');
-  d.innerHTML='<form class="sc-form" id="sc-book-form"><h2>New booking</h2><label>Guest first name<input name="first_name" required></label><label>Phone<input name="phone" inputmode="tel"></label><label>Email<input name="email" type="email"></label><label>Room / bed<select name="unit_id" required><option value="">Select</option>'+state.units.map(u=>'<option value="'+u.id+'" data-capacity="'+u.capacity+'">'+esc(u.name)+(u.room_group?' — '+esc(u.room_group):'')+'</option>').join('')+'</select></label><div class="two"><label>Adults<input type="number" name="adults" min="1" value="1" required></label><label>Children<input type="number" name="children" min="0" value="0"></label></div><div class="two"><label>Check in<input type="datetime-local" name="check_in" required></label><label>Check out<input type="datetime-local" name="check_out" required></label></div><div class="two"><label>Total ₹<input type="number" step="0.01" name="total"></label><label>Source<select name="source"><option>direct</option><option>walkin</option><option>airbnb</option><option>booking</option><option>agoda</option><option>gommt</option><option>other</option></select></label></div><label>Notes<textarea name="notes"></textarea></label><div id="sc-capacity-note" class="sc-meta"></div><div class="sc-actions"><button class="button button-primary">Save booking</button><button type="button" class="button sc-close">Cancel</button></div></form>';
-  d.showModal();
-  d.querySelector('.sc-close').onclick=()=>d.close();
-  const unitSel=d.querySelector('[name="unit_id"]');
-  const note=d.querySelector('#sc-capacity-note');
-  unitSel.onchange=()=>{const opt=unitSel.options[unitSel.selectedIndex];note.textContent=opt&&opt.dataset.capacity?'Maximum '+opt.dataset.capacity+' guest'+(opt.dataset.capacity==='1'?'':'s')+' for this unit.':'';};
-  d.querySelector('form').onsubmit=async e=>{
-    e.preventDefault();
-    const payload=Object.fromEntries(new FormData(e.target).entries());
-    try{await api('reservations',{method:'POST',body:JSON.stringify(payload)});d.close();await kpis();await render();}catch(err){alert(err.message)}
-  };
-};
-
-const openUnit = () => {
-  const d=el('#sc-dialog');
-  d.innerHTML='<form class="sc-form"><h2>Add room / bed</h2><label>Name<input name="name" placeholder="Room 8 · Bed A" required></label><label>Room group<input name="room_group" placeholder="Room 8 — Non-AC Dorm"></label><div class="two"><label>Type<select name="type"><option value="bed">Bed</option><option value="room">Private room</option></select></label><label>Capacity<input name="capacity" type="number" min="1" value="1"></label></div><label>Base rate ₹<input name="base_rate" type="number" step="0.01"></label><div class="sc-actions"><button class="button button-primary">Add inventory</button><button type="button" class="button sc-close">Cancel</button></div></form>';
-  d.showModal();d.querySelector('.sc-close').onclick=()=>d.close();
-  d.querySelector('form').onsubmit=async e=>{e.preventDefault();try{await api('units',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target).entries()))});d.close();await kpis();await render();}catch(err){alert(err.message)}};
-};
-
-document.addEventListener('DOMContentLoaded', async () => {
-  el('#sc-new-booking').onclick=()=>openBooking().catch(e=>alert(e.message));
-  document.querySelectorAll('.staycore-tabs button').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.staycore-tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.tab=b.dataset.tab;await render();});
-  try{await kpis();await render();}catch(e){el('#sc-view').innerHTML='<div class="sc-card">PMS could not load: '+esc(e.message)+'</div>'}
-});
+const render=async()=>{if(state.tab==='rooms')await renderRooms();if(state.tab==='today')await renderToday();if(state.tab==='stays')await renderStays();if(state.tab==='availability')await renderAvailability();if(state.tab==='activity')await renderActivity();if(state.tab==='inventory')await renderInventory();if(state.tab==='integrations')await renderIntegrations()};
+const refresh=async()=>{await kpis();await render()};
+document.addEventListener('DOMContentLoaded',async()=>{if(el('#sc-new-booking')){if(StayCorePMS.caps.reservations)el('#sc-new-booking').onclick=()=>openBooking().catch(e=>alert(e.message));else el('#sc-new-booking').style.display='none'}document.querySelectorAll('.staycore-tabs button').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.staycore-tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.tab=b.dataset.tab;await render()});try{await refresh()}catch(e){el('#sc-view').innerHTML='<div class="sc-card">PMS could not load: '+esc(e.message)+'</div>'}});
 })();
