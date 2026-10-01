@@ -416,7 +416,8 @@ final class StayCore_REST {
         return rest_ensure_response([
             'id'=>(int)$row['id'],'first_name'=>$row['first_name'],'reference'=>$row['external_ref']?:'#'.$row['id'],
             'check_in'=>$row['check_in'],'check_out'=>$row['check_out'],'assignment'=>implode(', ',array_column($row['assignments'],'name')),
-            'missing'=>$missing,'precheckin'=>!empty($meta['precheckin_at']),'status'=>$row['status']
+            'missing'=>$missing,'precheckin'=>!empty($meta['precheckin_at']),'status'=>$row['status'],
+            'can_checkin_now'=>substr($row['check_in'],0,10)<=current_time('Y-m-d')
         ]);
     }
 
