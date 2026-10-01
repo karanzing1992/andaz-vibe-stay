@@ -6,7 +6,7 @@ final class StayCore_REST {
         add_action('rest_api_init', [__CLASS__, 'routes']);
     }
 
-    private static function allowed(): bool {
+    public static function allowed(): bool {
         return current_user_can('manage_staycore_pms') || current_user_can('manage_options');
     }
 
