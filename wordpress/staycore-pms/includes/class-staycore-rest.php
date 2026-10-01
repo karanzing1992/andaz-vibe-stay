@@ -80,11 +80,13 @@ final class StayCore_REST {
 
     public static function dashboard(): WP_REST_Response {
         global $wpdb; $t=StayCore_DB::tables(); $today=current_time('Y-m-d'); $start=$today.' 00:00:00'; $end=$today.' 23:59:59';
-        $arrivals=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t['reservations']} WHERE DATE(check_in)=%s AND status IN ('confirmed','checked_in')",$today));
-        $departures=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t['reservations']} WHERE DATE(check_out)=%s AND status IN ('confirmed','checked_in')",$today));
+        $arrivals=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t['reservations']} WHERE DATE(check_in)=%s AND status NOT IN ('cancelled','no_show')",$today));
+        $departures=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t['reservations']} WHERE DATE(check_out)=%s AND status NOT IN ('cancelled','no_show')",$today));
         $inhouse=(int)$wpdb->get_var("SELECT COUNT(*) FROM {$t['reservations']} WHERE status='checked_in'");
         $occupied=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t['reservation_units']} ru JOIN {$t['reservations']} r ON r.id=ru.reservation_id WHERE r.status IN ('confirmed','checked_in') AND r.check_in<=%s AND r.check_out>%s",$end,$start));
-        $unit_total=(int)$wpdb->get_var("SELECT COUNT(*) FROM {$t['units']} WHERE status='available'");
+        $available=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t['units']} u WHERE u.status='available' AND u.housekeeping_status='clean' AND NOT EXISTS (SELECT 1 FROM {$t['reservation_units']} ru JOIN {$t['reservations']} r ON r.id=ru.reservation_id WHERE ru.unit_id=u.id AND r.status IN ('confirmed','checked_in') AND r.check_in<=%s AND r.check_out>%s)",$end,$start));
+        $cleaning=(int)$wpdb->get_var("SELECT COUNT(*) FROM {$t['units']} WHERE status='available' AND housekeeping_status IN ('dirty','cleaning')");
+        $maintenance=(int)$wpdb->get_var("SELECT COUNT(*) FROM {$t['units']} WHERE housekeeping_status='maintenance'");
         $expected=(float)$wpdb->get_var($wpdb->prepare("SELECT COALESCE(SUM(total),0) FROM {$t['reservations']} WHERE status IN ('confirmed','checked_in') AND check_in<=%s AND check_out>%s",$end,$start));
         $ids=$wpdb->get_col($wpdb->prepare("SELECT id FROM {$t['reservations']} WHERE status IN ('confirmed','checked_in') AND check_in<=%s AND check_out>%s",$end,$start));
         $collected=0.0;
@@ -96,7 +98,7 @@ final class StayCore_REST {
         foreach($unpaid as $x){ $ps=self::payment_summary((int)$x['id']); if($ps['balance']>0.009) $alerts[]=['type'=>'payment','reservation_id'=>(int)$x['id'],'message'=>'₹'.number_format($ps['balance'],2).' balance due']; }
         $missing=$wpdb->get_results($wpdb->prepare("SELECT r.id FROM {$t['reservations']} r JOIN {$t['guests']} g ON g.id=r.guest_id WHERE r.status IN ('confirmed','checked_in') AND r.check_in<=%s AND r.check_out>%s AND (g.phone IS NULL OR g.phone='')",$end,$start),ARRAY_A);
         foreach($missing as $x) $alerts[]=['type'=>'contact','reservation_id'=>(int)$x['id'],'message'=>'Guest phone missing'];
-        return rest_ensure_response(['arrivals'=>$arrivals,'departures'=>$departures,'inhouse'=>$inhouse,'occupied_units'=>$occupied,'available_units'=>max(0,$unit_total-$occupied),'expected_revenue'=>$expected,'collected'=>$collected,'balance'=>max(0,$expected-$collected),'alerts'=>$alerts]);
+        return rest_ensure_response(['arrivals'=>$arrivals,'departures'=>$departures,'inhouse'=>$inhouse,'occupied_units'=>$occupied,'available_units'=>$available,'cleaning_units'=>$cleaning,'maintenance_units'=>$maintenance,'expected_revenue'=>$expected,'collected'=>$collected,'balance'=>max(0,$expected-$collected),'alerts'=>$alerts]);
     }
 
     public static function units(): WP_REST_Response {
@@ -114,11 +116,24 @@ final class StayCore_REST {
     }
 
     public static function set_housekeeping(WP_REST_Request $request) {
-        global $wpdb; $t=StayCore_DB::tables(); $p=$request->get_json_params();
+        global $wpdb; $t=StayCore_DB::tables(); $p=$request->get_json_params(); $now=current_time('mysql');
         $ids=array_values(array_filter(array_map('absint',(array)($p['unit_ids']??[])))); $status=sanitize_key($p['status']??'');
         if(!$ids || !in_array($status,['clean','dirty','cleaning','maintenance'],true)) return new WP_Error('bad_housekeeping','Units and a valid housekeeping status are required.',['status'=>400]);
-        foreach($ids as $id) $wpdb->update($t['units'],['housekeeping_status'=>$status,'updated_at'=>current_time('mysql')],['id'=>$id]);
+        foreach($ids as $id) {
+            $unit=$wpdb->get_row($wpdb->prepare("SELECT id,name FROM {$t['units']} WHERE id=%d",$id),ARRAY_A);
+            if(!$unit) continue;
+            $wpdb->update($t['units'],['housekeeping_status'=>$status,'updated_at'=>$now],['id'=>$id]);
+            if($status==='dirty'){
+                $open=(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM {$t['tasks']} WHERE unit_id=%d AND type='housekeeping' AND status IN ('open','in_progress') LIMIT 1",$id));
+                if(!$open) $wpdb->insert($t['tasks'],['unit_id'=>$id,'type'=>'housekeeping','title'=>'Clean '.$unit['name'],'status'=>'open','priority'=>'normal','due_at'=>$now,'created_at'=>$now,'updated_at'=>$now]);
+            } elseif($status==='cleaning'){
+                $wpdb->query($wpdb->prepare("UPDATE {$t['tasks']} SET status='in_progress',updated_at=%s WHERE unit_id=%d AND type='housekeeping' AND status='open'",$now,$id));
+            } elseif($status==='clean'){
+                $wpdb->query($wpdb->prepare("UPDATE {$t['tasks']} SET status='done',updated_at=%s WHERE unit_id=%d AND type='housekeeping' AND status IN ('open','in_progress')",$now,$id));
+            }
+        }
         StayCore_DB::log('housekeeping_changed','unit',null,'Housekeeping status changed.',['unit_ids'=>$ids,'status'=>$status]);
+        StayCore_Integrations::emit('housekeeping_status_changed',['unit_ids'=>$ids,'status'=>$status]);
         return rest_ensure_response(['unit_ids'=>$ids,'status'=>$status]);
     }
 
@@ -190,6 +205,7 @@ final class StayCore_REST {
         $r=$wpdb->get_row($wpdb->prepare("SELECT * FROM {$t['reservations']} WHERE id=%d",$id),ARRAY_A); if(!$r) return new WP_Error('not_found','Reservation not found.',['status'=>404]);
         $mapped=(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM {$t['reservation_units']} WHERE reservation_id=%d AND unit_id=%d",$id,$from)); if(!$mapped) return new WP_Error('not_assigned','Source unit is not assigned to this booking.',['status'=>400]);
         $target=$wpdb->get_row($wpdb->prepare("SELECT * FROM {$t['units']} WHERE id=%d",$to),ARRAY_A); if(!$target) return new WP_Error('unit_not_found','Destination unit not found.',['status'=>404]);
+        if($r['status']==='checked_in' && $target['housekeeping_status']!=='clean') return new WP_Error('unit_not_ready',$target['name'].' is not ready. Housekeeping must mark it clean first.',['status'=>409]);
         if(self::active_overlap($to,$r['check_in'],$r['check_out'],$id)) return new WP_Error('unit_unavailable',$target['name'].' is unavailable for those dates.',['status'=>409]);
         $wpdb->update($t['reservation_units'],['unit_id'=>$to],['reservation_id'=>$id,'unit_id'=>$from]); if((int)$r['unit_id']===$from) $wpdb->update($t['reservations'],['unit_id'=>$to,'updated_at'=>current_time('mysql')],['id'=>$id]);
         StayCore_DB::log('unit_moved','reservation',$id,'Guest moved to another room/bed.',['from_unit_id'=>$from,'to_unit_id'=>$to]); StayCore_Integrations::emit('reservation_unit_moved',['id'=>$id,'from_unit_id'=>$from,'to_unit_id'=>$to]);
@@ -197,10 +213,22 @@ final class StayCore_REST {
     }
 
     public static function set_status(WP_REST_Request $request) {
-        global $wpdb; $t=StayCore_DB::tables(); $id=absint($request['id']); $status=sanitize_key(($request->get_json_params()['status']??''));
+        global $wpdb; $t=StayCore_DB::tables(); $id=absint($request['id']); $status=sanitize_key(($request->get_json_params()['status']??'')); $now=current_time('mysql');
         if(!in_array($status,['confirmed','checked_in','checked_out','cancelled','no_show'],true)) return new WP_Error('bad_status','Invalid reservation status.',['status'=>400]);
-        $wpdb->update($t['reservations'],['status'=>$status,'updated_at'=>current_time('mysql')],['id'=>$id]); if(!$wpdb->rows_affected) return new WP_Error('not_found','Reservation was not updated.',['status'=>404]);
-        if($status==='checked_out'){ $assign=self::assignments($id); foreach($assign as $a) $wpdb->update($t['units'],['housekeeping_status'=>'dirty','updated_at'=>current_time('mysql')],['id'=>(int)$a['unit_id']]); }
+        $assign=self::assignments($id);
+        if($status==='checked_in'){
+            foreach($assign as $a) if(($a['status']??'available')!=='available' || ($a['housekeeping_status']??'clean')!=='clean') return new WP_Error('unit_not_ready',$a['name'].' is not ready. Housekeeping must mark it clean before check-in.',['status'=>409]);
+        }
+        $wpdb->update($t['reservations'],['status'=>$status,'updated_at'=>$now],['id'=>$id]); if(!$wpdb->rows_affected) return new WP_Error('not_found','Reservation was not updated.',['status'=>404]);
+        if($status==='checked_out'){
+            foreach($assign as $a){
+                $uid=(int)$a['unit_id'];
+                $wpdb->update($t['units'],['housekeeping_status'=>'dirty','updated_at'=>$now],['id'=>$uid]);
+                $open=(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM {$t['tasks']} WHERE unit_id=%d AND type='housekeeping' AND status IN ('open','in_progress') LIMIT 1",$uid));
+                if(!$open) $wpdb->insert($t['tasks'],['unit_id'=>$uid,'reservation_id'=>$id,'type'=>'housekeeping','title'=>'Clean '.$a['name'],'status'=>'open','priority'=>'normal','due_at'=>$now,'created_at'=>$now,'updated_at'=>$now]);
+            }
+            StayCore_DB::log('housekeeping_required','reservation',$id,'Checkout completed; assigned room/bed marked for cleaning.');
+        }
         StayCore_DB::log('status_changed','reservation',$id,'Reservation status changed to '.$status.'.'); StayCore_Integrations::emit('reservation_status_changed',['id'=>$id,'status'=>$status]);
         return rest_ensure_response(self::reservation_row($id));
     }
