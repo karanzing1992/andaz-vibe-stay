@@ -26,9 +26,10 @@ final class StayCore_Admin {
     public static function render(): void {
         if(!current_user_can('staycore_view_pms')&&!current_user_can('manage_options')) wp_die('Not allowed.');
         echo '<div class="wrap staycore-shell"><div id="staycore-app">';
-        echo '<header class="staycore-head"><div><p class="eyebrow">PROPERTY OS · V0.3</p><h1>Andaz Front Desk</h1></div><button class="button button-primary" id="sc-new-booking">+ Booking</button></header>';
+        echo '<header class="staycore-head"><div><p class="eyebrow">ANDAZ VIBE STAY</p><h1>Front Desk</h1><p class="sc-today-label">'.esc_html(wp_date('D, j M')).'</p></div><button class="button button-primary sc-new" id="sc-new-booking">+ Booking</button></header>';
         echo '<section class="staycore-kpis" id="sc-kpis"></section><section id="sc-alerts"></section>';
-        echo '<nav class="staycore-tabs"><button data-tab="rooms" class="active">Rooms</button><button data-tab="today">Today</button><button data-tab="stays">Stays</button><button data-tab="availability">Availability</button><button data-tab="activity">Activity</button><button data-tab="inventory">Inventory</button><button data-tab="integrations">Integrations</button></nav>';
-        echo '<main id="sc-view"><div class="staycore-loading">Loading PMS…</div></main><dialog id="sc-dialog"></dialog></div></div>';
+        echo '<main id="sc-view"><div class="staycore-loading">Loading…</div></main>';
+        echo '<nav class="staycore-tabs"><button data-tab="rooms" class="active"><span class="dashicons dashicons-building"></span><span>Rooms</span></button><button data-tab="bookings"><span class="dashicons dashicons-clipboard"></span><span>Bookings</span></button><button data-tab="calendar"><span class="dashicons dashicons-calendar-alt"></span><span>Calendar</span></button><button data-tab="more"><span class="dashicons dashicons-menu"></span><span>More</span></button></nav>';
+        echo '<dialog id="sc-dialog"></dialog></div></div>';
     }
 }
