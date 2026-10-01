@@ -26,6 +26,7 @@ final class StayCore_DB {
         self::install_schema();
         self::ensure_roles();
         if (version_compare($from, '0.3.0', '<')) self::migrate_reservation_units();
+        if (class_exists('StayCore_Public')) StayCore_Public::ensure_page();
         update_option('staycore_pms_db_version', STAYCORE_PMS_VERSION);
     }
 
