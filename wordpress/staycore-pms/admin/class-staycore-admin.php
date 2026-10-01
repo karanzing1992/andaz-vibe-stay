@@ -26,6 +26,7 @@ final class StayCore_Admin {
         wp_localize_script('staycore-pms', 'StayCorePMS', [
             'root' => esc_url_raw(rest_url('staycore/v1/')),
             'nonce' => wp_create_nonce('wp_rest'),
+            'today' => current_time('Y-m-d'),
             'settings' => get_option('staycore_pms_settings', []),
         ]);
     }
@@ -35,7 +36,7 @@ final class StayCore_Admin {
         echo '<div class="wrap staycore-shell"><div id="staycore-app">';
         echo '<header class="staycore-head"><div><p class="eyebrow">PROPERTY OS</p><h1>Andaz Front Desk</h1></div><button class="button button-primary" id="sc-new-booking">+ Booking</button></header>';
         echo '<section class="staycore-kpis" id="sc-kpis"></section>';
-        echo '<nav class="staycore-tabs"><button data-tab="today" class="active">Today</button><button data-tab="stays">Stays</button><button data-tab="inventory">Rooms & Beds</button><button data-tab="integrations">Integrations</button></nav>';
+        echo '<nav class="staycore-tabs"><button data-tab="rooms" class="active">Rooms</button><button data-tab="today">Today</button><button data-tab="stays">Stays</button><button data-tab="inventory">Inventory</button><button data-tab="integrations">Integrations</button></nav>';
         echo '<main id="sc-view"><div class="staycore-loading">Loading PMS…</div></main>';
         echo '<dialog id="sc-dialog"></dialog>';
         echo '</div></div>';
