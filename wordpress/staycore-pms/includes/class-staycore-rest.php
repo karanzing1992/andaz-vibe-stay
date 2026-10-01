@@ -15,6 +15,11 @@ final class StayCore_REST {
             ['methods'=>'POST','callback'=>[__CLASS__,'create_unit'],'permission_callback'=>[__CLASS__,'can_reservations']],
         ]);
         register_rest_route('staycore/v1','/housekeeping',['methods'=>'POST','callback'=>[__CLASS__,'set_housekeeping'],'permission_callback'=>[__CLASS__,'can_housekeeping']]);
+        register_rest_route('staycore/v1','/guest-lookup',['methods'=>'GET','callback'=>[__CLASS__,'guest_lookup'],'permission_callback'=>[__CLASS__,'can_reservations']]);
+        register_rest_route('staycore/v1','/self-checkin/(?P<id>\\d+)',[
+            ['methods'=>'GET','callback'=>[__CLASS__,'self_checkin_get'],'permission_callback'=>'__return_true'],
+            ['methods'=>'POST','callback'=>[__CLASS__,'self_checkin_post'],'permission_callback'=>'__return_true'],
+        ]);
         register_rest_route('staycore/v1','/reservations',[
             ['methods'=>'GET','callback'=>[__CLASS__,'reservations'],'permission_callback'=>[__CLASS__,'can_view']],
             ['methods'=>'POST','callback'=>[__CLASS__,'create_reservation'],'permission_callback'=>[__CLASS__,'can_reservations']],
@@ -59,6 +64,7 @@ final class StayCore_REST {
         if(!$row) return null;
         $row['assignments']=self::assignments($id);
         $row['payment']=self::payment_summary($id);
+        $row['self_checkin_url']=self::self_checkin_url($row);
         return $row;
     }
 
@@ -76,6 +82,112 @@ final class StayCore_REST {
         if(isset($p['unit_ids']) && is_array($p['unit_ids'])) $ids=array_map('absint',$p['unit_ids']);
         elseif(!empty($p['unit_id'])) $ids=[absint($p['unit_id'])];
         return array_values(array_unique(array_filter($ids)));
+    }
+
+    private static function phone_digits(string $phone): string {
+        return preg_replace('/\\D+/', '', $phone) ?: '';
+    }
+
+    private static function find_guest_row(string $phone='',string $email=''): ?array {
+        global $wpdb; $t=StayCore_DB::tables();
+        $email=sanitize_email($email); $phone=sanitize_text_field($phone);
+        if($email){
+            $row=$wpdb->get_row($wpdb->prepare("SELECT * FROM {$t['guests']} WHERE email=%s ORDER BY id DESC LIMIT 1",$email),ARRAY_A);
+            if($row) return $row;
+        }
+        if($phone){
+            $row=$wpdb->get_row($wpdb->prepare("SELECT * FROM {$t['guests']} WHERE phone=%s ORDER BY id DESC LIMIT 1",$phone),ARRAY_A);
+            if($row) return $row;
+            $needle=self::phone_digits($phone);
+            if(strlen($needle)>=8){
+                $rows=$wpdb->get_results("SELECT * FROM {$t['guests']} WHERE phone IS NOT NULL AND phone<>'' ORDER BY id DESC LIMIT 500",ARRAY_A);
+                foreach($rows as $candidate){
+                    $digits=self::phone_digits((string)$candidate['phone']);
+                    if($digits===$needle || (strlen($digits)>=10 && strlen($needle)>=10 && substr($digits,-10)===substr($needle,-10))) return $candidate;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static function unit_matches_stay_type(array $unit,string $stay_type): bool {
+        $stay_type=sanitize_key($stay_type ?: 'dorm_any');
+        if($stay_type==='private') return $unit['type']==='room';
+        if($unit['type']!=='bed') return false;
+        $group=strtolower((string)$unit['room_group']);
+        $non_ac=str_contains($group,'non-ac') || str_contains($group,'non ac');
+        if($stay_type==='non_ac_dorm') return $non_ac;
+        if($stay_type==='ac_dorm') return !$non_ac && str_contains($group,'ac dorm');
+        return true;
+    }
+
+    private static function auto_assign_units(string $check_in,string $check_out,int $people,string $stay_type) {
+        global $wpdb; $t=StayCore_DB::tables();
+        $people=max(1,$people); $stay_type=sanitize_key($stay_type ?: 'dorm_any');
+        $same_day_or_past=substr($check_in,0,10)<=current_time('Y-m-d');
+        $units=$wpdb->get_results("SELECT * FROM {$t['units']} WHERE status='available' AND housekeeping_status<>'maintenance' ORDER BY room_group,name",ARRAY_A);
+        $eligible=[];
+        foreach($units as $unit){
+            if(!self::unit_matches_stay_type($unit,$stay_type)) continue;
+            if($same_day_or_past && ($unit['housekeeping_status']??'clean')!=='clean') continue;
+            if(self::active_overlap((int)$unit['id'],$check_in,$check_out)) continue;
+            $eligible[]=$unit;
+        }
+
+        if($stay_type==='private'){
+            $eligible=array_values(array_filter($eligible,fn($u)=>(int)$u['capacity'] >= $people));
+            usort($eligible,function($a,$b){ $cap=(int)$a['capacity']<=>(int)$b['capacity']; return $cap ?: strnatcasecmp($a['name'],$b['name']); });
+            return $eligible ? [(int)$eligible[0]['id']] : new WP_Error('no_inventory','No suitable private room is available for those dates.',['status'=>409]);
+        }
+
+        $groups=[];
+        foreach($eligible as $unit){
+            $key=(string)$unit['room_group'];
+            if(!isset($groups[$key])) $groups[$key]=['name'=>$key,'available'=>[],'occupied'=>0];
+            $groups[$key]['available'][]=$unit;
+        }
+        foreach($groups as $key=>&$group){
+            $group['occupied']=(int)$wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(DISTINCT ru.unit_id) FROM {$t['reservation_units']} ru JOIN {$t['reservations']} r ON r.id=ru.reservation_id JOIN {$t['units']} u ON u.id=ru.unit_id WHERE u.room_group=%s AND u.type='bed' AND r.status NOT IN ('cancelled','no_show','checked_out') AND r.check_in<%s AND r.check_out>%s",
+                $key,$check_out,$check_in
+            ));
+            usort($group['available'],fn($a,$b)=>strnatcasecmp($a['name'],$b['name']));
+        }
+        unset($group);
+        $groups=array_values($groups);
+        usort($groups,function($a,$b){ $occ=$b['occupied']<=>$a['occupied']; if($occ) return $occ; $avail=count($a['available'])<=>count($b['available']); return $avail ?: strnatcasecmp($a['name'],$b['name']); });
+
+        foreach($groups as $group){
+            if(count($group['available']) >= $people) return array_map(fn($u)=>(int)$u['id'],array_slice($group['available'],0,$people));
+        }
+        $selected=[];
+        foreach($groups as $group){
+            foreach($group['available'] as $unit){ $selected[]=(int)$unit['id']; if(count($selected)>=$people) return $selected; }
+        }
+        return new WP_Error('no_inventory','Not enough suitable dorm beds are available for those dates.',['status'=>409]);
+    }
+
+    private static function self_checkin_token(array $row): string {
+        return hash_hmac('sha256','staycore-checkin|'.(int)$row['id'].'|'.(int)$row['guest_id'].'|'.(string)$row['created_at'],wp_salt('auth'));
+    }
+
+    private static function self_checkin_url(array $row): string {
+        $page=(int)get_option('staycore_self_checkin_page_id',0);
+        $base=$page?get_permalink($page):home_url('/self-check-in/');
+        return add_query_arg(['booking'=>(int)$row['id'],'token'=>self::self_checkin_token($row)],$base);
+    }
+
+    private static function valid_self_checkin_token(array $row,string $token): bool {
+        return $token!=='' && hash_equals(self::self_checkin_token($row),$token);
+    }
+
+    private static function merge_reservation_meta(int $id,array $changes): void {
+        global $wpdb; $t=StayCore_DB::tables();
+        $raw=$wpdb->get_var($wpdb->prepare("SELECT meta FROM {$t['reservations']} WHERE id=%d",$id));
+        $meta=is_string($raw)&&$raw!==''?json_decode($raw,true):[];
+        if(!is_array($meta)) $meta=[];
+        foreach($changes as $k=>$v) $meta[$k]=$v;
+        $wpdb->update($t['reservations'],['meta'=>wp_json_encode($meta),'updated_at'=>current_time('mysql')],['id'=>$id]);
     }
 
     public static function dashboard(): WP_REST_Response {
@@ -159,26 +271,52 @@ final class StayCore_REST {
     public static function create_reservation(WP_REST_Request $request) {
         global $wpdb; $t=StayCore_DB::tables(); $p=apply_filters('staycore_pms_reservation_payload',$request->get_json_params()); $now=current_time('mysql');
         $first=sanitize_text_field($p['first_name']??''); $phone=sanitize_text_field($p['phone']??''); $email=sanitize_email($p['email']??'');
-        $check_in=sanitize_text_field($p['check_in']??''); $check_out=sanitize_text_field($p['check_out']??''); $unit_ids=self::normalize_unit_ids($p);
-        $adults=max(1,absint($p['adults']??(count($unit_ids)?:1))); $children=absint($p['children']??0);
-        if(!$first || !$unit_ids || !$check_in || !$check_out) return new WP_Error('missing_fields','Guest name, unit(s), check-in and check-out are required.',['status'=>400]);
+        $check_in=sanitize_text_field($p['check_in']??''); $check_out=sanitize_text_field($p['check_out']??'');
+        $adults=max(1,absint($p['adults']??1)); $children=absint($p['children']??0); $people=$adults+$children;
+        $stay_type=sanitize_key($p['stay_type']??'dorm_any'); $unit_ids=self::normalize_unit_ids($p);
+        $auto_assign=array_key_exists('auto_assign',$p)?(bool)$p['auto_assign']:!$unit_ids;
+        if(!$first || !$check_in || !$check_out) return new WP_Error('missing_fields','Guest name, check-in and check-out are required.',['status'=>400]);
         if(strtotime($check_out)<=strtotime($check_in)) return new WP_Error('bad_dates','Check-out must be after check-in.',['status'=>400]);
+        if(!$unit_ids && $auto_assign){
+            $assigned=self::auto_assign_units($check_in,$check_out,$people,$stay_type);
+            if(is_wp_error($assigned)) return $assigned;
+            $unit_ids=$assigned;
+        }
+        if(!$unit_ids) return new WP_Error('missing_units','Choose a room/bed or enable automatic assignment.',['status'=>400]);
+
         $capacity=0;
         foreach($unit_ids as $uid){
             $unit=$wpdb->get_row($wpdb->prepare("SELECT * FROM {$t['units']} WHERE id=%d",$uid),ARRAY_A); if(!$unit) return new WP_Error('unit_not_found','A selected room or bed was not found.',['status'=>404]);
             if($unit['status']!=='available' || self::active_overlap($uid,$check_in,$check_out)) return new WP_Error('unit_unavailable',$unit['name'].' is unavailable for those dates.',['status'=>409]);
-            if(strtotime($check_in)<=current_time('timestamp') && $unit['housekeeping_status']!=='clean') return new WP_Error('unit_not_ready',$unit['name'].' is vacant but not ready. Confirm cleaning with housekeeping before assigning.',['status'=>409,'unit_id'=>$uid,'housekeeping_status'=>$unit['housekeeping_status']]);
+            if(substr($check_in,0,10)<=current_time('Y-m-d') && $unit['housekeeping_status']!=='clean') return new WP_Error('unit_not_ready',$unit['name'].' is vacant but not ready. Confirm cleaning with housekeeping before assigning.',['status'=>409,'unit_id'=>$uid,'housekeeping_status'=>$unit['housekeeping_status']]);
             $capacity+=max(1,(int)$unit['capacity']);
         }
         if(($adults+$children)>$capacity) return new WP_Error('capacity_exceeded','Selected units allow a maximum of '.$capacity.' guests.',['status'=>400]);
-        $guest_id=0;
-        if($phone) $guest_id=(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM {$t['guests']} WHERE phone=%s ORDER BY id DESC LIMIT 1",$phone));
-        if(!$guest_id && $email) $guest_id=(int)$wpdb->get_var($wpdb->prepare("SELECT id FROM {$t['guests']} WHERE email=%s ORDER BY id DESC LIMIT 1",$email));
-        if(!$guest_id){ $wpdb->insert($t['guests'],['first_name'=>$first,'last_name'=>sanitize_text_field($p['last_name']??''),'phone'=>$phone,'email'=>$email,'nationality'=>sanitize_text_field($p['nationality']??''),'id_type'=>sanitize_text_field($p['id_type']??''),'id_number'=>sanitize_text_field($p['id_number']??''),'created_at'=>$now,'updated_at'=>$now]); $guest_id=(int)$wpdb->insert_id; }
-        $data=['guest_id'=>$guest_id,'unit_id'=>$unit_ids[0],'source'=>sanitize_key($p['source']??'direct'),'external_ref'=>sanitize_text_field($p['external_ref']??''),'check_in'=>$check_in,'check_out'=>$check_out,'adults'=>$adults,'children'=>$children,'status'=>sanitize_key($p['status']??'confirmed'),'total'=>(float)($p['total']??0),'currency'=>strtoupper(sanitize_text_field($p['currency']??'INR')),'notes'=>sanitize_textarea_field($p['notes']??''),'created_at'=>$now,'updated_at'=>$now];
+
+        $existing=null;
+        if(!empty($p['guest_id'])) $existing=$wpdb->get_row($wpdb->prepare("SELECT * FROM {$t['guests']} WHERE id=%d",absint($p['guest_id'])),ARRAY_A);
+        if(!$existing) $existing=self::find_guest_row($phone,$email);
+        if($existing){
+            $guest_id=(int)$existing['id']; $updates=['updated_at'=>$now];
+            foreach(['first_name','last_name','nationality','id_type','id_number'] as $field){
+                $value=sanitize_text_field($p[$field]??''); if($value!=='') $updates[$field]=$value;
+            }
+            if($phone!=='') $updates['phone']=$phone;
+            if($email!=='') $updates['email']=$email;
+            if(!empty($p['guest_notes'])) $updates['notes']=sanitize_textarea_field($p['guest_notes']);
+            $wpdb->update($t['guests'],$updates,['id'=>$guest_id]);
+        } else {
+            $wpdb->insert($t['guests'],['first_name'=>$first,'last_name'=>sanitize_text_field($p['last_name']??''),'phone'=>$phone,'email'=>$email,'nationality'=>sanitize_text_field($p['nationality']??''),'id_type'=>sanitize_text_field($p['id_type']??''),'id_number'=>sanitize_text_field($p['id_number']??''),'notes'=>sanitize_textarea_field($p['guest_notes']??''),'created_at'=>$now,'updated_at'=>$now]);
+            $guest_id=(int)$wpdb->insert_id;
+        }
+
+        $meta=['stay_type'=>$stay_type,'auto_assigned'=>$auto_assign && !isset($p['unit_ids'])];
+        if(isset($p['meta'])&&is_array($p['meta'])) $meta=array_merge($p['meta'],$meta);
+        $data=['guest_id'=>$guest_id,'unit_id'=>$unit_ids[0],'source'=>sanitize_key($p['source']??'direct'),'external_ref'=>sanitize_text_field($p['external_ref']??''),'check_in'=>$check_in,'check_out'=>$check_out,'adults'=>$adults,'children'=>$children,'status'=>sanitize_key($p['status']??'confirmed'),'total'=>(float)($p['total']??0),'currency'=>strtoupper(sanitize_text_field($p['currency']??'INR')),'notes'=>sanitize_textarea_field($p['notes']??''),'meta'=>wp_json_encode($meta),'created_at'=>$now,'updated_at'=>$now];
         $wpdb->insert($t['reservations'],$data); if(!$wpdb->insert_id) return new WP_Error('db_error','Could not create reservation.',['status'=>500]); $id=(int)$wpdb->insert_id;
         foreach($unit_ids as $uid) $wpdb->insert($t['reservation_units'],['reservation_id'=>$id,'unit_id'=>$uid,'guests'=>1,'created_at'=>$now]);
-        StayCore_DB::log('reservation_created','reservation',$id,'Reservation created.',['unit_ids'=>$unit_ids]); StayCore_Integrations::emit('reservation_created',['id'=>$id]+$data+['unit_ids'=>$unit_ids]);
+        StayCore_DB::log('reservation_created','reservation',$id,'Reservation created.',['unit_ids'=>$unit_ids,'auto_assigned'=>$auto_assign,'stay_type'=>$stay_type,'returning_guest'=>(bool)$existing]);
+        StayCore_Integrations::emit('reservation_created',['id'=>$id]+$data+['unit_ids'=>$unit_ids]);
         return rest_ensure_response(self::reservation_row($id));
     }
 
@@ -247,6 +385,75 @@ final class StayCore_REST {
         $wpdb->insert($t['payments'],$data); if(!$wpdb->insert_id) return new WP_Error('db_error','Could not record payment.',['status'=>500]);
         StayCore_DB::log('payment_recorded','reservation',$id,'Payment recorded.',['payment_id'=>(int)$wpdb->insert_id,'amount'=>$amount,'method'=>$data['method']]); StayCore_Integrations::emit('payment_recorded',['id'=>(int)$wpdb->insert_id]+$data);
         return rest_ensure_response(['id'=>(int)$wpdb->insert_id,'summary'=>self::payment_summary($id)]);
+    }
+
+    public static function guest_lookup(WP_REST_Request $request): WP_REST_Response {
+        global $wpdb; $t=StayCore_DB::tables();
+        $phone=sanitize_text_field($request->get_param('phone')?:''); $email=sanitize_email($request->get_param('email')?:'');
+        if(!$phone && !$email) return rest_ensure_response(['found'=>false]);
+        $guest=self::find_guest_row($phone,$email);
+        if(!$guest) return rest_ensure_response(['found'=>false]);
+        $stays=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t['reservations']} WHERE guest_id=%d",(int)$guest['id']));
+        $last=$wpdb->get_row($wpdb->prepare("SELECT check_in,check_out,source FROM {$t['reservations']} WHERE guest_id=%d ORDER BY check_out DESC LIMIT 1",(int)$guest['id']),ARRAY_A);
+        return rest_ensure_response(['found'=>true,'guest'=>[
+            'id'=>(int)$guest['id'],'first_name'=>$guest['first_name'],'last_name'=>$guest['last_name'],'phone'=>$guest['phone'],'email'=>$guest['email'],
+            'nationality'=>$guest['nationality'],'id_type'=>$guest['id_type'],'id_number'=>$guest['id_number'],'notes'=>$guest['notes'],'stay_count'=>$stays,'last_stay'=>$last,
+        ]]);
+    }
+
+    public static function self_checkin_get(WP_REST_Request $request) {
+        $id=absint($request['id']); $token=sanitize_text_field($request->get_param('token')?:'');
+        $row=self::reservation_row($id);
+        if(!$row || !self::valid_self_checkin_token($row,$token)) return new WP_Error('invalid_link','This self check-in link is invalid.',['status'=>403]);
+        if(in_array($row['status'],['cancelled','no_show','checked_out'],true)) return new WP_Error('booking_closed','This booking is no longer open for self check-in.',['status'=>409]);
+        $meta=is_string($row['meta']??null)?json_decode($row['meta'],true):[];
+        if(!is_array($meta)) $meta=[];
+        $missing=[];
+        if(empty($row['phone'])) $missing[]='phone';
+        if(empty($row['email'])) $missing[]='email';
+        if(empty($row['nationality'])) $missing[]='nationality';
+        if(empty($row['id_type']) || empty($row['id_number'])) $missing[]='id';
+        return rest_ensure_response([
+            'id'=>(int)$row['id'],'first_name'=>$row['first_name'],'reference'=>$row['external_ref']?:'#'.$row['id'],
+            'check_in'=>$row['check_in'],'check_out'=>$row['check_out'],'assignment'=>implode(', ',array_column($row['assignments'],'name')),
+            'missing'=>$missing,'precheckin'=>!empty($meta['precheckin_at']),'status'=>$row['status']
+        ]);
+    }
+
+    public static function self_checkin_post(WP_REST_Request $request) {
+        global $wpdb; $t=StayCore_DB::tables(); $id=absint($request['id']); $p=$request->get_json_params(); $token=sanitize_text_field($p['token']??'');
+        $row=self::reservation_row($id);
+        if(!$row || !self::valid_self_checkin_token($row,$token)) return new WP_Error('invalid_link','This self check-in link is invalid.',['status'=>403]);
+        if(in_array($row['status'],['cancelled','no_show','checked_out'],true)) return new WP_Error('booking_closed','This booking is no longer open for self check-in.',['status'=>409]);
+
+        $updates=['updated_at'=>current_time('mysql')];
+        if(!empty($p['phone'])) $updates['phone']=sanitize_text_field($p['phone']);
+        if(!empty($p['email'])) $updates['email']=sanitize_email($p['email']);
+        if(!empty($p['nationality'])) $updates['nationality']=sanitize_text_field($p['nationality']);
+        if(!empty($p['id_type'])) $updates['id_type']=sanitize_text_field($p['id_type']);
+        if(!empty($p['id_number'])) $updates['id_number']=sanitize_text_field($p['id_number']);
+        $phone=$updates['phone']??$row['phone'];
+        if(!$phone) return new WP_Error('phone_required','Please enter a mobile number to complete self check-in.',['status'=>400]);
+        $wpdb->update($t['guests'],$updates,['id'=>(int)$row['guest_id']]);
+        self::merge_reservation_meta($id,['precheckin_at'=>current_time('mysql')]);
+        StayCore_DB::log('guest_prechecked','reservation',$id,'Guest completed self check-in details.');
+
+        $today=current_time('Y-m-d');
+        if(substr($row['check_in'],0,10)>$today) return rest_ensure_response(['state'=>'prechecked']);
+        if(substr($row['check_out'],0,10)<$today) return new WP_Error('booking_closed','This booking has already ended.',['status'=>409]);
+
+        foreach(self::assignments($id) as $unit){
+            if(($unit['status']??'available')!=='available' || ($unit['housekeeping_status']??'clean')!=='clean'){
+                StayCore_DB::log('self_checkin_waiting','reservation',$id,'Guest self check-in is waiting for housekeeping.');
+                return rest_ensure_response(['state'=>'waiting_housekeeping']);
+            }
+        }
+        if($row['status']!=='checked_in'){
+            $wpdb->update($t['reservations'],['status'=>'checked_in','updated_at'=>current_time('mysql')],['id'=>$id]);
+            StayCore_DB::log('self_checked_in','reservation',$id,'Guest completed self check-in.');
+            StayCore_Integrations::emit('reservation_status_changed',['id'=>$id,'status'=>'checked_in','via'=>'self_checkin']);
+        }
+        return rest_ensure_response(['state'=>'checked_in']);
     }
 
     public static function activity(WP_REST_Request $request): WP_REST_Response {
