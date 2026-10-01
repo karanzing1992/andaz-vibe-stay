@@ -40,7 +40,7 @@ final class StayCore_REST {
                 'permission_callback' => [__CLASS__, 'allowed'],
             ],
         ]);
-        register_rest_route('staycore/v1', '/reservations/(?P<id>\d+)/status', [
+        register_rest_route('staycore/v1', '/reservations/(?P<id>\\d+)/status', [
             'methods' => 'POST',
             'callback' => [__CLASS__, 'set_status'],
             'permission_callback' => [__CLASS__, 'allowed'],
@@ -62,16 +62,9 @@ final class StayCore_REST {
         $departures = (int)$wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM {$t['reservations']} WHERE DATE(check_out)=%s AND status IN ('confirmed','checked_in')", $today
         ));
-        $inhouse = (int)$wpdb->get_var(
-            "SELECT COUNT(*) FROM {$t['reservations']} WHERE status='checked_in'"
-        );
-        $open_tasks = (int)$wpdb->get_var(
-            "SELECT COUNT(*) FROM {$t['tasks']} WHERE status IN ('open','in_progress')"
-        );
-        $available = (int)$wpdb->get_var(
-            "SELECT COUNT(*) FROM {$t['units']} WHERE status='available'"
-        );
-
+        $inhouse = (int)$wpdb->get_var("SELECT COUNT(*) FROM {$t['reservations']} WHERE status='checked_in'");
+        $open_tasks = (int)$wpdb->get_var("SELECT COUNT(*) FROM {$t['tasks']} WHERE status IN ('open','in_progress')");
+        $available = (int)$wpdb->get_var("SELECT COUNT(*) FROM {$t['units']} WHERE status='available'");
         return rest_ensure_response(compact('arrivals','departures','inhouse','open_tasks','available'));
     }
 
@@ -110,7 +103,9 @@ final class StayCore_REST {
         $from = sanitize_text_field($request->get_param('from') ?: current_time('Y-m-d'));
         $to = sanitize_text_field($request->get_param('to') ?: gmdate('Y-m-d', strtotime($from . ' +30 days')));
         $sql = $wpdb->prepare(
-            "SELECT r.*, CONCAT(g.first_name,' ',COALESCE(g.last_name,'')) guest_name, g.phone, u.name unit_name, u.room_group
+            "SELECT r.*, CONCAT(g.first_name,' ',COALESCE(g.last_name,'')) guest_name,
+                    g.phone, g.email, g.nationality,
+                    u.name unit_name, u.room_group, u.type unit_type, u.capacity unit_capacity
              FROM {$t['reservations']} r
              LEFT JOIN {$t['guests']} g ON g.id=r.guest_id
              LEFT JOIN {$t['units']} u ON u.id=r.unit_id
@@ -132,6 +127,8 @@ final class StayCore_REST {
         $unit_id = absint($p['unit_id'] ?? 0);
         $check_in = sanitize_text_field($p['check_in'] ?? '');
         $check_out = sanitize_text_field($p['check_out'] ?? '');
+        $adults = max(1, absint($p['adults'] ?? 1));
+        $children = absint($p['children'] ?? 0);
 
         if (!$first || !$unit_id || !$check_in || !$check_out) {
             return new WP_Error('missing_fields', 'Guest name, unit, check-in and check-out are required.', ['status'=>400]);
@@ -140,12 +137,27 @@ final class StayCore_REST {
             return new WP_Error('bad_dates', 'Check-out must be after check-in.', ['status'=>400]);
         }
 
+        $unit = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, name, type, capacity, status FROM {$t['units']} WHERE id=%d LIMIT 1", $unit_id
+        ), ARRAY_A);
+        if (!$unit) return new WP_Error('unit_not_found', 'Room or bed was not found.', ['status'=>404]);
+        if ($unit['status'] !== 'available') return new WP_Error('unit_unavailable', 'This room or bed is not available.', ['status'=>409]);
+
+        $capacity = max(1, (int)$unit['capacity']);
+        if (($adults + $children) > $capacity) {
+            return new WP_Error(
+                'capacity_exceeded',
+                sprintf('%s allows a maximum of %d guest%s.', $unit['name'], $capacity, $capacity === 1 ? '' : 's'),
+                ['status'=>400]
+            );
+        }
+
         $overlap = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM {$t['reservations']} WHERE unit_id=%d AND status NOT IN ('cancelled','no_show')
+            "SELECT id FROM {$t['reservations']} WHERE unit_id=%d AND status NOT IN ('cancelled','no_show','checked_out')
              AND check_in < %s AND check_out > %s LIMIT 1",
             $unit_id, $check_out, $check_in
         ));
-        if ($overlap) return new WP_Error('unit_unavailable', 'This unit is already booked for those dates.', ['status'=>409]);
+        if ($overlap) return new WP_Error('unit_unavailable', 'This room or bed is already booked for those dates.', ['status'=>409]);
 
         $guest_id = 0;
         if ($phone) {
@@ -172,8 +184,8 @@ final class StayCore_REST {
             'external_ref'=>sanitize_text_field($p['external_ref'] ?? ''),
             'check_in'=>$check_in,
             'check_out'=>$check_out,
-            'adults'=>max(1, absint($p['adults'] ?? 1)),
-            'children'=>absint($p['children'] ?? 0),
+            'adults'=>$adults,
+            'children'=>$children,
             'status'=>sanitize_key($p['status'] ?? 'confirmed'),
             'total'=>(float)($p['total'] ?? 0),
             'currency'=>strtoupper(sanitize_text_field($p['currency'] ?? 'INR')),
