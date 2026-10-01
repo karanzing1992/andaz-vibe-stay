@@ -149,7 +149,7 @@ final class StayCore_DB {
         $manager = get_role('staycore_manager') ?: add_role('staycore_manager','StayCore Manager',$caps);
         if ($manager) foreach ($caps as $cap=>$grant) $manager->add_cap($cap,$grant);
 
-        $front_caps = ['read'=>true,'staycore_view_pms'=>true,'staycore_manage_reservations'=>true,'staycore_manage_payments'=>true];
+        $front_caps = ['read'=>true,'staycore_view_pms'=>true,'staycore_manage_reservations'=>true,'staycore_manage_payments'=>true,'staycore_manage_housekeeping'=>true];
         $front = get_role('staycore_front_desk') ?: add_role('staycore_front_desk','StayCore Front Desk',$front_caps);
         if ($front) foreach ($front_caps as $cap=>$grant) $front->add_cap($cap,$grant);
 
