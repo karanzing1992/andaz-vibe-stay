@@ -21,7 +21,7 @@ async function main(){
   fs.mkdirSync(screenshots,{recursive:true});
   const browser=await chromium.launch({executablePath:"/usr/bin/google-chrome",headless:true,args:["--no-sandbox","--disable-dev-shm-usage"]});
   try{
-    for(const width of [390,768,1440]){
+    for(const width of [320,390,768,1024,1440]){
       const context=await browser.newContext({viewport:{width,height:900},acceptDownloads:false});
       const page=await context.newPage();
       const errors=[];
@@ -65,6 +65,9 @@ async function main(){
     const context=await browser.newContext({viewport:{width:390,height:850}});
     const page=await context.newPage();
     await page.route("https://wa.me/**",route=>route.fulfill({status:200,contentType:"text/html",body:"<!doctype html><title>Intercepted dry run</title>"}));
+    await page.goto(url("contact.html")+"?room=unknown");
+    assert.equal(await page.locator("#room-type").inputValue(),"");
+    pass("unknown room query safely ignored");
     await page.goto(url("contact.html")+"?room=ac-dorm");
     assert.equal(await page.locator("#room-type").inputValue(),"AC six-bed dorm");
     pass("room deep link preselection");
@@ -76,6 +79,14 @@ async function main(){
     await page.locator("#guest-name").fill("Synthetic QA Guest");
     await page.locator("#checkin").fill(iso(first));
     await page.locator("#checkout").fill(iso(second));
+    await page.locator("#guests").fill("0");
+    await page.locator('button[type="submit"]').click();
+    assert.match(await page.locator("#form-error").textContent(),/complete all fields/);
+    pass("zero guests rejected");
+    await page.locator("#guests").fill("13");
+    await page.locator('button[type="submit"]').click();
+    assert.match(await page.locator("#form-error").textContent(),/complete all fields/);
+    pass("over-capacity guest count rejected");
     await page.locator("#guests").fill("2");
     await page.locator('button[type="submit"]').click();
     assert.match(await page.locator("#form-error").textContent(),/Checkout must be after check-in/);
