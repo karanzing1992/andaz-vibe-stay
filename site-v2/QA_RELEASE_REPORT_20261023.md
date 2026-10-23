@@ -42,6 +42,8 @@ Dell existing Chrome 155 + already-installed Playwright, launched in an isolated
 - Outgoing WhatsApp navigation was intercepted: **no real message sent**.
 - Mobile home/contact and desktop home screenshots saved **locally on Dell only** in `site-v2/.qa-artifacts/` (uncommitted).
 
+Final Dell regression receipt: `52d98129-7fc9-46cf-9a75-97b09dab57b0`, exit **0**. Repeat static QA 229/229, JS syntax checks, and `git diff --exit-code origin/main HEAD -- index.html wordpress` all passed. The only untracked local directory was `.qa-artifacts/` (three generated browser screenshots); no source drift.
+
 ## Regression and security boundary
 
 - Existing repository-root `index.html` and `wordpress/staycore-pms` were not modified by this feature branch.
