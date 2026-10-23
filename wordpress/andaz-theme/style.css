@@ -1,0 +1,12 @@
+/*
+Theme Name: Andaz Vibe Stay — Static Style
+Theme URI: https://github.com/karanzing1992/andaz-vibe-stay
+Author: Andaz Dev Matrix
+Description: Lightweight WordPress theme retaining the approved Andaz static front end, with accessible WhatsApp booking enquiries; no simulated inventory.
+Version: 0.1.0
+Requires at least: 6.3
+Requires PHP: 8.0
+Text Domain: andaz-vibe
+License: GPL-2.0-or-later
+*/
+:root { color-scheme: light; }

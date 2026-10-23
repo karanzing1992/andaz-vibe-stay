@@ -1,0 +1,49 @@
+# Dev Matrix terminal completion webhook replacement.
+# Event-driven, not a timer: this workflow starts ONLY when the worker commits
+# a final verified submission manifest to the isolated review branch.
+name: Dev Matrix verified completion callback
+on:
+  push:
+    branches:
+      - feat/wp-static-hybrid-booking-20261023
+    paths:
+      - .devmatrix/final-submission.json
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: devmatrix-complete-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify-and-notify:
+    if: github.repository == 'karanzing1992/andaz-vibe-stay'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact code and full ancestry
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Independently test Python contracts and callback
+        run: |
+          python3 -B -m unittest discover -s tests -p 'test_wordpress_theme.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_completion_callback.py' -v
+      - name: Independently test booking behaviour
+        run: node --test tests/booking.test.cjs
+      - name: Lint PHP sources
+        run: |
+          php -v
+          php -l wordpress/andaz-theme/functions.php
+          php -l wordpress/andaz-theme/index.php
+          php -l wordpress/andaz-theme/front-page.php
+      - name: Require independent evidenced terminal submission
+        run: |
+          python3 -B tools/devmatrix_completion_callback.py verify \
+            --manifest .devmatrix/final-submission.json --root . --head "$GITHUB_SHA"
+      - name: Send one GitHub-native handover notification
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 -B tools/devmatrix_completion_callback.py notify \
+            --manifest .devmatrix/final-submission.json --root . --head "$GITHUB_SHA"
