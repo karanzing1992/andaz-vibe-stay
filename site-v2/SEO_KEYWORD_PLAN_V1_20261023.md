@@ -1,6 +1,6 @@
 # Andaz V1 — Search Intent and Keyword Plan
 Date: 23 October 2026 (Asia/Kolkata)
-Status: staged V1 copy plan, **not live GSC performance evidence**
+Status: staged V1 copy plan; **Andaz GSC not yet connected**. Related Arambol query evidence is available from a separate Moksha property and must not be represented as Andaz performance.
 
 ## Owner decision and scope
 - Owner accepted the V1 visual direction on 23 October 2026. Frozen design branch: `release/andaz-v1-design-approved-20261023`.
@@ -36,12 +36,21 @@ These are **hypotheses based on page intent and geography**, not keywords valida
 - Present beaches and routes as independent suggestions. Conditions, access and transport can change.
 - Use real Andaz photographs and accurate alt text before production where approved.
 
-## Google Search Console reality and post-launch measurement
-- On 23 October 2026, the connected **GSC Wizard** returned `payment_required / subscription_required`. It did not provide live queries or page performance data.
-- Therefore no keyword volume, ranking, CTR, or Search Console improvement is claimed.
-- If the actual Andaz Search Console property is available through a free owner-authorized read-only route, collect 28-day query/page/device/country data, indexing and sitemap status, and Core Web Vitals. Otherwise use Google Search Console directly after property verification.
-- After launch, map real query impressions and CTR to each page, identify mismatches/cannibalization, and revise copy only with evidence.
-- Do not purchase a GSC Wizard subscription automatically; no spend was authorized.
+## First-party WordPress GSC verification — 23 October 2026
+- **Use the in-house WP Manager / Engagement Core read-only GSC integration**, not paid GSC Wizard, for ongoing measurement. The owner-authorized route was tested live.
+- WP Manager lists two paired sites: **Moksha Wellness Goa** (`https://mokshagoa.com`) and **Andaz StayCore PMS — Staging** (`https://staycore-stage.mokshagoa.com`). The latter is a PMS staging site, **not a verified public Andaz marketing-site GSC property**.
+- `gsc_status` for Moksha: `connected=true`, property `https://mokshagoa.com/`, read-only `webmasters.readonly` scope, last sync 23 Oct 2026 14:58:22 UTC. Its most recent snapshot reports 159 clicks and 2,615 impressions.
+- `gsc_status` for the paired Andaz StayCore staging site returned `wp_control_action_not_allowed` (HTTP 400); its listed capabilities do not include SEO. This is an **authorization / property-configuration boundary**. Do not bypass it or misattribute Moksha metrics to Andaz.
+- Direct `gsc_search` (not GSC Wizard) successfully returned query and page rows for Moksha, **22 September–20 October 2026**. Small, geographically relevant signals: query “places to visit near arambol beach” = 1 click / 1 impression; “arambol things to do” = 0 clicks / 2 impressions. Moksha's `/things-to-do-in-arambol/` page = 1 click / 16 impressions. These are **cross-site directional signals only**, not validated Andaz search demand or rankings. Sample sizes are too small for numerical targeting.
+- The V1 Explore page's primary phrase “things to do in Arambol” and supporting phrase “places to visit near Arambol Beach” remain reasonable test hypotheses. Keep useful natural wording, not repetition or keyword stuffing.
+- Previous GSC Wizard attempt returned `payment_required / subscription_required`; it is not required for this workflow. No subscription or spend is authorized.
+
+## Andaz GSC activation and post-launch measurement
+1. Confirm the approved **public Andaz website domain** and deploy/pair the marketing site separately from StayCore PMS. Do not point marketing GSC actions at the PMS site or Moksha.
+2. Verify the exact public domain/URL-prefix property in the first-party read-only GSC integration under the owner account, and ensure the correct site has an authorized SEO scope. Any permission or pairing change requires the owner's explicit approval.
+3. When authorized, collect 28-day query/page/device/country rows, sitemap status and URL Inspection diagnostics from native `gsc_search`, `gsc_sitemaps` and `gsc_inspect`. Do not use URL Inspection to claim an indexing request.
+4. After launch, map **Andaz-only** impressions, clicks, CTR and average position to each page; identify content gaps and revise copy from settled data. Treat low-volume or newly indexed pages cautiously.
+5. Preserve this prelaunch keyword plan as a baseline. Do not claim Andaz GSC keyword rankings, traffic or CTR until the correct property is connected and measured.
 
 ## Production SEO gate
 1. Confirm final public domain and owner-approved canonical URLs; avoid duplicate preview URLs in the index.
