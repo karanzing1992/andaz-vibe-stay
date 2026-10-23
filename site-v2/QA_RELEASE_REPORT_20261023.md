@@ -31,12 +31,12 @@ Five-page, mobile-first website candidate at `site-v2/` on branch `feat/task1-de
 
 Dell existing Chrome 155 + already-installed Playwright, launched in an isolated headless context. No authenticated user profile was used.
 
-**22/22 browser assertions passed**, receipt `737dd086-55cc-4892-814d-92424abc00e9`, exit 0:
+**35/35 browser assertions passed**, receipt `3d0b0329-9792-4fe5-8373-354e0d4ad76e`, exit 0:
 
-- All five pages at **390px, 768px and 1440px**: proper page structure, active navigation, computed style, no horizontal overflow.
+- All five pages at **320px, 390px, 768px, 1024px and 1440px**: proper page structure, active navigation, computed style, no horizontal overflow.
 - Mobile menu opens, navigates and closes.
-- Room detail link preselects the right booking option.
-- Empty booking request rejected.
+- Room detail link preselects the right booking option; unknown room query is ignored.
+- Empty booking request, zero guests and guest count over 12 rejected.
 - Same-day checkout rejected.
 - Valid synthetic request builds a correctly encoded WhatsApp enquiry.
 - Outgoing WhatsApp navigation was intercepted: **no real message sent**.
