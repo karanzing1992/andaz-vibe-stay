@@ -24,7 +24,7 @@ First-party/market references for contextual comparison:
 - [Happy Panda official policies](https://www.happypandahostel.com/policies/) — only for general comparison, not reused as Andaz rules.
 - [The Peace Hostel official site](https://thepeacehostel.in/) — general shared-room positioning.
 - [Hostelworld Arambol private rooms](https://www.hostelworld.com/hostels/asia/india/arambol/f/private-rooms/) — category-level market context.
-- [Moksha Wellness first-party public site](https://sites.google.com/view/mokshain/home/) — linked as separate partner; older content may need owner correction.
+- [Moksha Wellness legacy website](https://sites.google.com/view/mokshain/) identifies [mokshagoa.com](https://mokshagoa.com/) as the current official destination; linked as a separate partner.
 
 Source caveat: Search results are **leads**, not verified date-specific checkout prices or certified claims. The prior authenticated competitor extraction/reviewer security gate remains blocked and was **not bypassed**.
 
