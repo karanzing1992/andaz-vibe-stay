@@ -61,9 +61,9 @@ def comment_text(receipt):
         f"<!-- matrix-completion-event:{event} -->",
         f"**Andaz Dev Matrix completion event — {status}**",
         "",
-        f"- Job: \`{receipt['job_id']}\`",
-        f"- Evidence SHA-256: \`{receipt['evidence_sha256']}\`",
-        f"- Booking mode: \`{receipt.get('booking_mode','unverified')}\`",
+        f"- Job: `{receipt['job_id']}`",
+        f"- Evidence SHA-256: `{receipt['evidence_sha256']}`",
+        f"- Booking mode: `{receipt.get('booking_mode','unverified')}`",
         "- Production: unchanged; owner review required.",
     ]
     if status=="blocked":
