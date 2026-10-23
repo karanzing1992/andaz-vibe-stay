@@ -26,6 +26,10 @@
       if(checkout.value&&checkout.value<checkout.min)checkout.value="";
     });
   }
+  const preferred=new URLSearchParams(window.location.search).get("room");
+  const roomSelect=document.getElementById("room-type");
+  const roomOptions={"non-ac-dorm":"Non-AC six-bed dorm","ac-dorm":"AC six-bed dorm","two-bed":"Two-bed non-AC dorm","private-ac":"Private AC room"};
+  if(roomSelect&&preferred&&Object.prototype.hasOwnProperty.call(roomOptions,preferred))roomSelect.value=roomOptions[preferred];
   const form=document.getElementById("booking-form");
   if(form){
     form.addEventListener("submit",function(event){
