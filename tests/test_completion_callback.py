@@ -58,7 +58,7 @@ class CompletionCallbackTests(unittest.TestCase):
     def test_tampered_evidence_rejected(self):
         owner,root,m,data=self.make_case()
         with owner:
-            (root/"docs"/"php_lint.md").write_text("Changed after signoff")
+            (root/"docs"/"php_lint.md").write_text("Changed after signoff - this is a tampered independent reviewer receipt.")
             with self.assertRaisesRegex(callback.CompletionDenied,"gate_evidence_hash_mismatch"):
                 callback.load_verified_manifest(m,root)
     def test_path_traversal_fails_closed(self):
@@ -84,9 +84,10 @@ class CompletionCallbackTests(unittest.TestCase):
             with self.assertRaisesRegex(callback.CompletionDenied,"unknown_job"):
                 callback.load_verified_manifest(m,root)
     def test_dedupe_marker_is_stable(self):
-        _,_,_,data=self.make_case()
-        self.assertEqual(callback.marker(data), callback.marker(dict(data)))
-        self.assertTrue(callback.marker(data).startswith("<!-- bhm-completion:"))
+        owner,_,_,data=self.make_case()
+        with owner:
+            self.assertEqual(callback.marker(data), callback.marker(dict(data)))
+            self.assertTrue(callback.marker(data).startswith("<!-- bhm-completion:"))
     def test_duplicate_notification_does_not_post(self):
         owner,root,m,_=self.make_case()
         with owner:
