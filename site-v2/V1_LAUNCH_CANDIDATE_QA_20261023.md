@@ -41,3 +41,6 @@ Earlier pre-CTA suite: receipt `a885397e-f1b6-4790-9330-fcac6e45319e`, exit 0, 2
 4. Explicit production publishing instruction, then live URL/mobile SEO smoke after deployment.
 
 No production publish, DNS change, financial spend, permissions/root change, Mac connection use or PMS mutation occurred.
+
+## Production/PMS non-regression verification
+Final bounded Git comparison on Dell: receipt `1b910284-df0e-41b6-9733-ca3edb70bf6b`, terminal `completed`, exit code **0**. `git diff --exit-code origin/main HEAD -- index.html wordpress` passed. The changed-path list contains only `site-v2/` content. A first comparison attempt (`59aa5492-c5df-449d-8b1a-caa141da6e1d`) failed with exit 128 because a single-branch clone lacked `origin/main`; the missing read-only ref was fetched explicitly and the corrected comparison passed. No production files were changed.
