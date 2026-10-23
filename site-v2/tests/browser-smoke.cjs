@@ -6,7 +6,7 @@ const os=require("os");
 const {pathToFileURL}=require("url");
 const assert=require("assert").strict;
 let chromium;
-for(const modulePath of ["playwright",path.join(os.homedir(),"dell-ai-operator","node_modules","playwright")]){
+for(const modulePath of ["playwright",path.join(os.homedir(),"moksha-browser","node_modules","playwright"),path.join(os.homedir(),"dell-ai-operator","node_modules","playwright")]){
   try{chromium=require(modulePath).chromium;break;}catch{}
 }
 if(!chromium)throw new Error("Existing Dell Playwright installation not found");
