@@ -50,4 +50,47 @@
       window.location.href="https://wa.me/918999541081?text="+encodeURIComponent(msg);
     });
   }
+  // Around Us: locally filter fully rendered HTML; map links work without JavaScript.
+  const guide=document.querySelector("[data-explore-guide]");
+  if(guide){
+    const search=guide.querySelector("[data-explore-search]");
+    const clear=guide.querySelector("[data-explore-clear]");
+    const area=guide.querySelector("[data-explore-area]");
+    const chips=Array.from(guide.querySelectorAll("[data-explore-type]"));
+    const cards=Array.from(document.querySelectorAll("[data-explore-item]"));
+    const count=document.getElementById("explore-count");
+    const empty=document.getElementById("explore-empty");
+    const reset=document.querySelector("[data-explore-reset]");
+    const types=new Set(["all","beach","nature","local","heritage"]);
+    const areas=new Set(["all","arambol","north","south"]);
+    const params=new URLSearchParams(window.location.search);
+    let activeType=types.has(params.get("type"))?params.get("type"):"all";
+    search.value=(params.get("q")||"").slice(0,100);
+    area.value=areas.has(params.get("area"))?params.get("area"):"all";
+    const normalize=value=>String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+    function render(){
+      const terms=normalize(search.value).split(/\s+/).filter(Boolean);
+      let visible=0;
+      cards.forEach(function(card){
+        const searchable=normalize(card.textContent+" "+card.dataset.keywords);
+        const matches=terms.every(term=>searchable.includes(term))&&(activeType==="all"||card.dataset.type===activeType)&&(area.value==="all"||card.dataset.area===area.value);
+        card.hidden=!matches;
+        if(matches)visible++;
+      });
+      chips.forEach(function(chip){const selected=chip.dataset.exploreType===activeType;chip.classList.toggle("active",selected);chip.setAttribute("aria-pressed",String(selected));});
+      clear.hidden=!search.value;
+      count.textContent=visible+" "+(visible===1?"place":"places")+" to explore";
+      empty.hidden=visible!==0;
+      const next=new URL(window.location.href);
+      [["q",search.value.trim()],["type",activeType==="all"?"":activeType],["area",area.value==="all"?"":area.value]].forEach(function(entry){if(entry[1])next.searchParams.set(entry[0],entry[1]);else next.searchParams.delete(entry[0]);});
+      if(window.history&&window.history.replaceState)window.history.replaceState(null,"",next.pathname+next.search+next.hash);
+    }
+    search.addEventListener("input",render);
+    area.addEventListener("change",render);
+    chips.forEach(chip=>chip.addEventListener("click",function(){activeType=chip.dataset.exploreType;render();}));
+    clear.addEventListener("click",function(){search.value="";render();search.focus();});
+    reset.addEventListener("click",function(){search.value="";activeType="all";area.value="all";render();search.focus();});
+    render();
+  }
+
 })();
