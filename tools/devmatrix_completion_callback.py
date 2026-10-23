@@ -114,7 +114,7 @@ def safe_message(manifest: dict) -> str:
         "The final-submission manifest passed the independent completion workflow, "
         "including source tests, PHP lint, JavaScript booking tests and evidence-integrity gates. "
         "**This is a request for owner review, not approval to merge, publish or deploy.**\n\n"
-        f"- Source reviewed: \`{manifest['source_sha']}\`\n"
+        f"- Source reviewed: `{manifest['source_sha']}`\n"
         f"- Final handover: [review the deliverables](https://github.com/{REPOSITORY}/blob/"
         f"feat/wp-static-hybrid-booking-20261023/{manifest['handover']})\n"
         f"- Evidence: {len(REQUIRED_GATES)}/{len(REQUIRED_GATES)} required gate receipts verified\n"
