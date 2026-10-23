@@ -31,8 +31,15 @@ footer{background:#0f0f0e;color:#c9c1b9;padding:22px 0;font-size:.8rem}.foot{dis
 @media(max-width:560px){.wrap{width:min(100% - 26px,1180px)}.hero .art{min-height:400px}.collage{grid-template-columns:1fr;grid-template-rows:auto}.tile.big{grid-column:auto;min-height:240px}.tile{min-height:170px}.rituals{grid-template-columns:1fr 1fr}.bookbar{grid-template-columns:1fr}.bookbar button{grid-column:auto}.field{border-right:0;border-bottom:1px solid #ddd}}
 </style>
 <?php wp_head(); ?>
+<style>
+/* Keyboard and motion access remain visible alongside static V1 styling. */
+:where(a,button,input,select):focus-visible{outline:3px solid #287b81!important;outline-offset:3px!important}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto!important}.btn{transition:none!important}.btn:hover{transform:none!important}}
+@media(max-width:560px){.bookbar .field{min-width:0}.booking .bookgrid{gap:12px}.booking .field input{min-height:44px}}
+</style>
 </head>
 <body>
+<?php wp_body_open(); ?>
 <div class="noise"></div>
 <nav><div class="wrap nav"><div class="wordmark">ANDAZ VIBE STAY</div><div class="links"><a href="#stay">Stay</a><a href="#connect">Experience</a><a href="#reset">Wellness</a><a href="#location">Location</a></div><a class="navcta" href="#booking">Enquire About Dates →</a></div></nav>
 
