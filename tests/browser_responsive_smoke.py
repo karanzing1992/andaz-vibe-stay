@@ -47,6 +47,9 @@ def make_preview():
     # Strip PHP only for static browser preview. Never substitute for PHP lint.
     html=re.sub(r"<\?php[\s\S]*?\?>","",html)
     assert "<?php" not in html
+    # The marketing page imports a remote Google Font. Offline QA removes it
+    # to avoid external network stalls while preserving layout/fallback fonts.
+    html=re.sub(r"@import\\s+url\\([^;]+;", "", html)
     booking=BOOKING.read_text(encoding="utf-8")
     html=html.replace("</body>", "<script>"+booking+"</script>"+PROBE+"</body>")
     return html
