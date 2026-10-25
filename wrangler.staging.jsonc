@@ -1,0 +1,14 @@
+{
+  "name": "andaz-vibe-stay-staging",
+  "compatibility_date": "2026-10-24",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./dist"
+  },
+  "routes": [
+    {
+      "pattern": "staging.andazgoa.com",
+      "custom_domain": true
+    }
+  ]
+}
