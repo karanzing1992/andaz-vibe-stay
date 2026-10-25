@@ -1,0 +1,4 @@
+/_qa/synergica/*
+  X-Robots-Tag: noindex, nofollow, noarchive
+  Cache-Control: private, max-age=0
+  Referrer-Policy: no-referrer
