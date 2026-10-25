@@ -1,9 +1,9 @@
 {
   "release": "Andaz Website V1.0.0",
-  "publishing_channel": "GitHub Pages",
+  "publishing_channel": "Cloudflare Workers Static Assets (Git-connected)",
   "source_repo": "karanzing1992/andaz-vibe-stay",
   "frozen_code_commit": "6dfd36832bee80c3dd34122ec01f402c45fc592e",
-  "canonical_base": "https://karanzing1992.github.io/andaz-vibe-stay/",
+  "canonical_base": "https://andazgoa.com/",
   "pages": [
     "index.html",
     "rooms.html",
@@ -12,6 +12,6 @@
     "contact.html"
   ],
   "changes": "SEO packaging: canonical and og:url for each page; sitemap.xml; robots.txt; .nojekyll. Static markup and JS/CSS otherwise unchanged.",
-  "custom_domain": "not yet configured",
-  "note": "GitHub Pages project root URL is temporary until owner's custom domain is added."
+  "custom_domain": "andazgoa.com",
+  "note": "Primary site is https://andazgoa.com/. Workers.dev remains a technical fallback. GitHub Pages is a noncanonical legacy fallback."
 }
