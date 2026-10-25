@@ -1,0 +1,17 @@
+{
+  "release": "Andaz Website V1.0.0",
+  "publishing_channel": "GitHub Pages",
+  "source_repo": "karanzing1992/andaz-vibe-stay",
+  "frozen_code_commit": "6dfd36832bee80c3dd34122ec01f402c45fc592e",
+  "canonical_base": "https://karanzing1992.github.io/andaz-vibe-stay/",
+  "pages": [
+    "index.html",
+    "rooms.html",
+    "experiences.html",
+    "explore.html",
+    "contact.html"
+  ],
+  "changes": "SEO packaging: canonical and og:url for each page; sitemap.xml; robots.txt; .nojekyll. Static markup and JS/CSS otherwise unchanged.",
+  "custom_domain": "not yet configured",
+  "note": "GitHub Pages project root URL is temporary until owner's custom domain is added."
+}

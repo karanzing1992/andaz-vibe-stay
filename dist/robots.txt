@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://karanzing1992.github.io/andaz-vibe-stay/sitemap.xml

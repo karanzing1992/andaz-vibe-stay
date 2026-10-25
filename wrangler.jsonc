@@ -1,0 +1,7 @@
+{
+  "name": "andaz-vibe-stay",
+  "compatibility_date": "2026-10-26",
+  "assets": {
+    "directory": "./dist"
+  }
+}
