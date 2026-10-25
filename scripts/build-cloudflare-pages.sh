@@ -35,6 +35,15 @@ for file in "${files[@]}"; do
   cp -- "$file" "dist/$file"
 done
 
+# Preview-branch-only: copy a public QA notice without private source/secrets.
+test -f qa/synergica/index.html && test ! -L qa/synergica/index.html || exit 1
+test -f qa/synergica/_headers && test ! -L qa/synergica/_headers || exit 1
+mkdir -p dist/_qa/synergica
+cp qa/synergica/index.html dist/_qa/synergica/index.html
+cp qa/synergica/_headers dist/_headers
+files+=( _qa/synergica/index.html _headers )
+grep -qi 'noindex' dist/_qa/synergica/index.html || exit 1
+
 # Confirm the output is exactly the reviewed public website file allowlist.
 actual="$(find dist -type f | sed 's#^dist/##' | LC_ALL=C sort)"
 expected="$(printf '%s\n' "${files[@]}" | LC_ALL=C sort)"
