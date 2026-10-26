@@ -1,14 +1,40 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>WP Manager · Synergica — QA Staging</title>
-<style>body{margin:0;background:#f3f7f5;color:#183b33;font:16px/1.6 system-ui,sans-serif;padding:clamp(24px,6vw,65px)}main{max-width:790px;margin:auto}h1{font-size:clamp(28px,5vw,45px);line-height:1.12}section{background:#fff;border:1px solid #d4e2dc;padding:25px;border-radius:16px;margin:22px 0}p{max-width:65ch}a{color:#146956}dt{font-weight:650}dd{margin:0 0 13px}small{color:#53766c}</style></head>
-<body><main><small>PRIVATE QA · CLOUDFLARE GIT BRANCH PREVIEW</small>
-<h1>WP Manager / Synergica staging</h1>
-<p>This isolated preview is built from a non-production branch of the Andaz Vibe Stay repository. <strong>Synergica.in and the Andaz production website remain unchanged.</strong></p>
-<section><h2>Environment boundaries</h2><dl>
-<dt>Cloudflare</dt><dd>Preview branch; no custom domain, DNS or production merge</dd>
-<dt>Repository</dt><dd><a href="https://github.com/karanzing1992/andaz-vibe-stay">Andaz Vibe Stay — GitHub</a></dd>
-<dt>Target site</dt><dd>synergica.in — existing frontend preserved; WordPress pairing not yet certified</dd>
-<dt>Authorization</dt><dd>WP Manager OAuth stays on the isolated authenticated staging service</dd>
-<dt>Secrets and credentials</dt><dd>None collected or stored by this preview page</dd>
-</dl></section>
-<section><h2>Safe test workflow</h2><p>Open the WP Manager connection from <a href="https://chatgpt.com/plugins">ChatGPT plugins</a>. Do not paste credentials, one-time email URLs, tokens or pairing proofs into this preview.</p></section>
-<small>Noindex · Read-only environment landing page · No WordPress writes</small></main></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>WP Manager — Private Staging · AndazGoa</title>
+<style>
+:root{font:16px/1.55 system-ui,-apple-system,sans-serif;color:#18362f;background:#f3f7f5}
+*{box-sizing:border-box}body{margin:0;padding:clamp(24px,5vw,64px)}main{max-width:820px;margin:auto}
+.eyebrow{color:#51766c;letter-spacing:.13em;text-transform:uppercase;font-size:12px;font-weight:750}
+h1{font-size:clamp(30px,4.5vw,50px);letter-spacing:-.04em;line-height:1.12;margin:12px 0}
+h2{font-size:21px}p{color:#415b53;max-width:65ch}
+section{border:1px solid #d1e0da;background:white;border-radius:16px;margin:24px 0;padding:25px}
+dl{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:10px}dt{font-weight:700}dd{margin:0;color:#435d55}
+a{color:#0b6550;text-underline-offset:3px}small{font-size:13px;color:#54736a}
+@media(max-width:550px){dl{grid-template-columns:1fr}dd{margin-bottom:11px}}
+</style>
+</head>
+<body><main>
+<p class="eyebrow">Private staging · WP Manager by DeluluTech</p>
+<h1>WordPress Manager QA</h1>
+<p>An isolated Cloudflare staging frontend with a dedicated WordPress QA backend. This environment is not the live Andaz website.</p>
+<section>
+<h2>Environment</h2>
+<dl>
+<dt>Staging frontend</dt><dd><a href="https://staging.andazgoa.com/">staging.andazgoa.com</a></dd>
+<dt>WordPress QA backend</dt><dd><a href="https://wpqa.staging.andazgoa.com/wp-json/" rel="noreferrer">Verified WordPress REST API</a></dd>
+<dt>QA WordPress admin</dt><dd><a href="https://wpqa.staging.andazgoa.com/wp-login.php" rel="noreferrer">WordPress administrator login</a></dd>
+<dt>ChatGPT OAuth</dt><dd>Separate, authenticated WP Manager staging MCP service</dd>
+<dt>WordPress site pairing</dt><dd>Separate authorization gate; not automatically enabled by this landing page</dd>
+</dl>
+</section>
+<section>
+<h2>Safe QA workflow</h2>
+<p>Use the connected WP Manager QA plugin inside ChatGPT. Approve WordPress pairing only through the isolated WordPress administrator account. Never paste passwords, access tokens or one-time pairing secrets into this public page.</p>
+<p><a href="https://chatgpt.com/plugins" rel="noreferrer">Open ChatGPT plugins</a></p>
+</section>
+<small>Noindex · No credentials, cookies, trackers, or WordPress writes on this page · Live andazgoa.com unchanged</small>
+</main></body></html>
