@@ -1,0 +1,14 @@
+// Deterministically regenerate the self-contained staging Worker from public dist.
+import {readFileSync,writeFileSync} from "node:fs";
+const paths=["index.html","rooms.html","experiences.html","explore.html","contact.html","assets/site.css","assets/site.js","robots.txt","sitemap.xml","release-manifest.json","_qa/synergica/index.html","_headers"];
+const head="// GENERATED FILE — do not edit manually.\n// Source: the 12 public-only /dist assets in Git; generator: scripts/build-staging-worker.mjs\n// Static staging Worker: no outgoing requests, cookies, credentials, databases or writes.\n// Deployed ONLY as andaz-vibe-stay-staging; never overwrite live andaz-vibe-stay.\n";
+const tail="\naddEventListener(\"fetch\", event => event.respondWith(handle(event.request)));\nfunction resolvePath(path) {\n  if (path === \"/\") return \"/index.html\";\n  if (path === \"/_qa/synergica\" || path === \"/_qa/synergica/\") return \"/_qa/synergica/index.html\";\n  const route = path.match(/^\\/(rooms|experiences|explore|contact)\\/?$/);\n  if (route) return \"/\" + route[1] + \".html\";\n  return path;\n}\nasync function handle(request) {\n const noindex={\n   \"x-robots-tag\":\"noindex, nofollow, noarchive\",\n   \"cache-control\":\"no-store\",\n   \"x-content-type-options\":\"nosniff\",\n   \"referrer-policy\":\"no-referrer\"\n };\n if(![\"GET\",\"HEAD\"].includes(request.method))return new Response(\"Method not allowed\",{status:405,headers:{...noindex,allow:\"GET, HEAD\"}});\n const url = new URL(request.url);\n if(url.pathname===\"/__staging_health\"){\n   return new Response(request.method===\"HEAD\"?null:JSON.stringify({service:\"andaz-vibe-stay-staging\",environment:\"staging\",source:\"git-dist-embedded\",secrets:false,wordpressConnected:false}),{status:200,headers:{\"content-type\":\"application/json; charset=utf-8\",...noindex}});\n }\n const path = resolvePath(url.pathname);\n if(!Object.hasOwn(FILES,path))return new Response(\"Not found\",{status:404,headers:noindex});\n const mime = path.endsWith(\".css\")?\"text/css\":path.endsWith(\".js\")?\"application/javascript\":path.endsWith(\".xml\")?\"application/xml\":path.endsWith(\".txt\")?\"text/plain\":path.endsWith(\".json\")?\"application/json\":\"text/html\";\n return new Response(request.method===\"HEAD\"?null:FILES[path],{status:200,headers:{...noindex,\"content-type\":mime+\"; charset=utf-8\",\"x-staging-source\":\"git-dist-embedded\"}});\n}\n";
+const files={};
+for (const p of paths){
+ const bytes=readFileSync("dist/"+p,"utf8");
+ if(!bytes || bytes.length>120000)throw Error("Invalid public asset "+p);
+ files["/"+p]=bytes;
+}
+if(!files["/_qa/synergica/index.html"].includes("noindex") || !files["/index.html"].includes("Andaz Vibe Stay"))throw Error("Staging asset safety gate");
+writeFileSync("staging-worker.generated.js",head+"\nconst FILES = "+JSON.stringify(files)+";\n"+tail);
+console.log("Generated staging Worker from "+paths.length+" public-only Git assets");
